@@ -18,6 +18,7 @@ import traceback
 import addon_utils
 import bmesh
 import bpy
+import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -376,11 +377,340 @@ def weight_to_uv():
     check(len(ob.data.uv_layers) > uv_maps, "no UV map was created")
 
 
+# --- Options and behaviour ----------------------------------------------------
+
+
+def update_tessellation(out):
+    select_only(out)
+    check_finished(bpy.ops.object.tissue_update_tessellate(), "Refresh")
+
+
+def check_reports_error(func, text):
+    # A problem with the user's settings has to be a readable message, not a traceback.
+    try:
+        func()
+    except RuntimeError as e:
+        check("Traceback" not in str(e), f"got a traceback instead of a message: {e}")
+        check(text in str(e), f"unexpected message: {e}")
+    else:
+        raise AssertionError(f"expected the error '{text}'")
+
+
+@test
+def tessellate_patch_uv_rotation():
+    # The evaluated generator has more faces than patches: this used to raise an IndexError.
+    base, component, out = tessellate('PATCH', prepare=lambda base: base.modifiers.new("Subdivision", 'SUBSURF'))
+    faces = len(out.data.polygons)
+    out.tissue_tessellate.rotation_mode = 'UV'
+    update_tessellation(out)
+    check(len(out.data.polygons) == faces, "UV rotation changed the number of faces")
+
+
+@test
+def tessellate_frame_iterations():
+    # The first iteration has coincident vertices: this used to raise a ValueError.
+    base, component, out = tessellate('FRAME')
+    out.tissue_tessellate.iterations = 2
+    update_tessellation(out)
+    check(len(out.data.polygons) > 0, "tessellation is empty")
+
+
+@test
+def tessellate_missing_collection():
+    base, component, out = tessellate('QUAD')
+    out.tissue_tessellate.component_mode = 'COLLECTION'
+    select_only(out)
+    check_reports_error(bpy.ops.object.tissue_update_tessellate, "Collection")
+
+
+@test
+def tessellate_collection():
+    base, component, out = tessellate('QUAD')
+    collection = bpy.data.collections.new("Components")
+    bpy.context.scene.collection.children.link(collection)
+    collection.objects.link(component)
+    out.tissue_tessellate.component_mode = 'COLLECTION'
+    out.tissue_tessellate.component_coll = collection
+    update_tessellation(out)
+    check(len(out.data.polygons) > 0, "tessellation is empty")
+    bpy.data.collections.remove(collection)
+
+
+@test
+def tessellate_open_edges_crease():
+    # The value used to be written to 'crease_edge.001', which Blender ignores.
+    base = add_grid()
+    component = add_grid(size=1)
+    select_only(component, base, active=base)
+    result = bpy.ops.object.tissue_tessellate(generator=base.name, component=component.name, fill_mode='QUAD')
+    check_finished(result, "Tessellate")
+    out = bpy.context.object
+    props = out.tissue_tessellate
+    props.merge = True
+    props.close_mesh = 'CAP'
+    props.open_edges_crease = 0.5
+    update_tessellation(out)
+    names = [a.name for a in out.data.attributes]
+    check('crease_edge.001' not in names, "creases were written to a second layer")
+    check('crease_edge' in names, "no creases were created")
+    creases = [0.0] * len(out.data.attributes['crease_edge'].data)
+    out.data.attributes['crease_edge'].data.foreach_get('value', creases)
+    check(max(creases) > 0.4, f"creases were not set, highest value is {max(creases)}")
+
+
+@test
+def tessellate_animated():
+    base, component, out = tessellate('QUAD')
+    z = max(v.co.z for v in out.data.vertices)
+    out.tissue.bool_run = True
+    for v in base.data.vertices:
+        v.co.z += 1
+    bpy.context.scene.frame_set(bpy.context.scene.frame_current + 1)
+    out.tissue.bool_run = False
+    check(max(v.co.z for v in out.data.vertices) > z + 0.5, "the tessellation did not follow the generator")
+
+
+@test
+def tessellate_shape_keys():
+    # Component's Shape Keys are only used without the component's modifiers.
+    failures = []
+    enum_items = lambda name: [i.identifier for i in bpy.types.Object.bl_rna.properties[
+        'tissue_tessellate'].fixed_type.properties[name].enum_items]
+    for fill_mode in ('QUAD', 'TRI', 'FAN', 'FRAME', 'PATCH'):
+        for normals_mode in enum_items('normals_mode'):
+            for scale_mode in enum_items('scale_mode'):
+                reset_scene()
+                base = add_grid()
+                if fill_mode == 'PATCH':
+                    base.modifiers.new("Subdivision", 'SUBSURF')
+                base.shape_key_add(name="Basis")
+                base_key = base.shape_key_add(name="Key")
+                base_key.value = 0.5
+                # With Shape Keys as normals, the normals are the distance between the keys
+                for point in base_key.data:
+                    point.co.z += 0.2
+                add_weight(base)
+                component = add_cube()
+                component.shape_key_add(name="Basis")
+                key = component.shape_key_add(name="Key")
+                key.value = 1
+                for point in key.data:
+                    point.co.z += 0.1
+                select_only(component, base, active=base)
+                case = f"{fill_mode}/{normals_mode}/{scale_mode}"
+                try:
+                    bpy.ops.object.tissue_tessellate(generator=base.name, component=component.name, fill_mode=fill_mode)
+                    out = bpy.context.object
+                    props = out.tissue_tessellate
+                    props.com_modifiers = False
+                    props.bool_shapekeys = True
+                    props.normals_mode = normals_mode
+                    props.scale_mode = scale_mode
+                    update_tessellation(out)
+                    props.vertex_group_thickness = "Weight"
+                    update_tessellation(out)
+                    if not out.data.shape_keys or len(out.data.shape_keys.key_blocks) != 2:
+                        failures.append(f"{case}: the shape keys were not transferred")
+                    else:
+                        basis, moved = out.data.shape_keys.key_blocks
+                        if all((a.co - b.co).length < 1e-5 for a, b in zip(basis.data, moved.data)):
+                            failures.append(f"{case}: the shape key doesn't move the geometry")
+                except Exception as e:
+                    failures.append(f"{case}: {str(e).strip().splitlines()[-1]}")
+    check(not failures, "\n".join(failures))
+
+
+@test
+def tessellate_after_reload():
+    base, component, out = tessellate('QUAD')
+    faces = len(out.data.polygons)
+    name = out.name
+    path = os.path.join(tempfile.mkdtemp(prefix="tissue_reload_"), "reload.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    out = bpy.data.objects[name]
+    check(out.tissue_tessellate.generator is not None, "the generator was lost")
+    update_tessellation(out)
+    check(len(out.data.polygons) == faces, "the reloaded tessellation changed")
+    bpy.ops.wm.read_homefile(use_factory_startup=True, use_empty=False)
+
+
+def particles(settings_type):
+    ob = add_grid()
+    modifier = ob.modifiers.new("Particles", 'PARTICLE_SYSTEM')
+    settings = modifier.particle_system.settings
+    settings.type = settings_type
+    settings.count = 5
+    settings.frame_start = settings.frame_end = 1
+    select_only(ob)
+    return ob
+
+
+@test
+def convert_particles_to_curve():
+    for settings_type in ('HAIR', 'EMITTER'):
+        reset_scene()
+        ob = particles(settings_type)
+        check_finished(bpy.ops.object.tissue_convert_to_curve(mode='PARTICLES'), "Convert to Curve")
+        check(bpy.context.object.type == 'CURVE', "result is not a curve")
+
+
+@test
+def convert_without_particles():
+    ob = add_grid()
+    select_only(ob)
+    check_reports_error(lambda: bpy.ops.object.tissue_convert_to_curve(mode='PARTICLES'), "Particle")
+
+
+@test
+def streamlines_from_script():
+    # Without the dialog the object name was empty: this used to raise a KeyError.
+    ob = add_icosphere(subdivisions=3)
+    add_weight(ob)
+    select_only(ob)
+    check_finished(bpy.ops.object.tissue_weight_streamlines(), "Streamlines")
+    check(bpy.context.object.type == 'CURVE', "result is not a curve")
+
+
+@test
+def weight_tools_in_edit_mode():
+    # VertexGroup.add() is not allowed in Edit Mode: these used to raise a RuntimeError.
+    for name in ('face_area_to_vertex_groups', 'random_weight', 'harmonic_weight', 'weight_laplacian',
+                 'curvature_to_vertex_groups', 'vertex_group_to_vertex_colors'):
+        reset_scene()
+        ob = add_icosphere(subdivisions=2)
+        add_weight(ob)
+        select_only(ob)
+        bpy.ops.object.mode_set(mode='EDIT')
+        check_finished(getattr(bpy.ops.object, name)(), name)
+
+
+def contour_with(**settings):
+    ob = add_icosphere(subdivisions=3)
+    add_weight(ob)
+    values = [v.co.z for v in ob.data.vertices]
+    ob.data.attributes.new("height", 'FLOAT', 'POINT').data.foreach_set('value', values)
+    for v in ob.data.vertices:
+        v.select = v.index == 0
+    select_only(ob)
+    settings = {k: (v(ob) if callable(v) else v) for k, v in settings.items()}
+    result = bpy.ops.object.tissue_weight_contour_curves_pattern(object=ob.name, **settings)
+    check_finished(result, "Contour Curves")
+    check(bpy.context.object != ob, "no contour object was created")
+
+
+@test
+def contour_modes():
+    contour_with(contour_mode='WEIGHT', vertex_group_contour=lambda ob: ob.vertex_groups[0].name)
+    reset_scene()
+    contour_with(contour_mode='ATTRIBUTE', contour_attribute="height")
+    reset_scene()
+    contour_with(contour_mode='GEODESIC', seeds_mode='WEIGHT', vertex_group_seed=lambda ob: ob.vertex_groups[0].name)
+    reset_scene()
+    contour_with(contour_mode='TOPOLOGY', seeds_mode='WEIGHT', vertex_group_seed=lambda ob: ob.vertex_groups[0].name)
+
+
+def reaction_diffusion_object():
+    ob = add_icosphere(subdivisions=3)
+    select_only(ob)
+    check_finished(bpy.ops.object.start_reaction_diffusion(), "Reaction Diffusion")
+    for v in ob.data.vertices:
+        if v.co.z > 0.5:
+            ob.vertex_groups['B'].add([v.index], 1, 'REPLACE')
+    return ob
+
+
+@test
+def reaction_diffusion_simulates():
+    ob = reaction_diffusion_object()
+    group = ob.vertex_groups['B']
+    before = weights(ob, group)
+    scene = bpy.context.scene
+    for frame in range(2, 5):
+        scene.frame_set(frame)
+    ob.reaction_diffusion_settings.run = False
+    check(weights(ob, group) != before, "the simulation did not change the weights")
+    check_weights(ob, group)
+
+
+@test
+def reaction_diffusion_bake():
+    ob = reaction_diffusion_object()
+    props = ob.reaction_diffusion_settings
+    props.cache_frame_start = 1
+    props.cache_frame_end = 3
+    props.cache_dir = tempfile.mkdtemp(prefix="tissue_rd_")
+    check_finished(bpy.ops.object.bake_reaction_diffusion(), "Bake")
+    # The last frame used to be skipped.
+    for frame in (1, 2, 3):
+        for name in ('a', 'b'):
+            check(os.path.exists(os.path.join(props.cache_dir, f"{name}_{frame:04d}")), f"frame {frame} was not baked")
+    check_finished(bpy.ops.object.reaction_diffusion_free_data(), "Free Data")
+    check(os.listdir(props.cache_dir) == [], "Free Data left some files")
+    props.run = False
+
+
+@test
+def texture_reaction_diffusion():
+    ob = add_grid()
+    select_only(ob)
+    check_finished(bpy.ops.object.start_tex_reaction_diffusion(), "Texture Reaction Diffusion")
+    props = ob.tex_reaction_diffusion_settings
+    image = bpy.data.images[props.img_b] if isinstance(props.img_b, str) else props.img_b
+    width, height = image.size
+    pixels = [0.0, 0.0, 0.0, 1.0] * (width * height)
+    for y in range(height // 2 - 4, height // 2 + 4):
+        for x in range(width // 2 - 4, width // 2 + 4):
+            pixels[(y * width + x) * 4] = 1.0
+    image.pixels.foreach_set(pixels)
+    before = [0.0] * len(pixels)
+    image.pixels.foreach_get(before)
+    # The frame handler is added by the panel, which isn't drawn in background mode.
+    sys.modules["tissue.texture_reaction_diffusion"].tex_reaction_diffusion_def(ob)
+    after = [0.0] * len(pixels)
+    image.pixels.foreach_get(after)
+    check(after != before, "the simulation did not change the image")
+    check_finished(bpy.ops.object.reset_tex_reaction_diffusion(), "Texture Reaction Diffusion reset")
+
+
+@test
+def texture_reaction_diffusion_numpy_matches_numba():
+    module = sys.modules["tissue.texture_reaction_diffusion"]
+    if 'run_tex_rd_ani' not in vars(module):
+        print("      (Numba is not available: nothing to compare)")
+        return
+    rng = np.random.default_rng(1)
+    shape = (40, 30)
+    start_a, start_b = rng.random(shape), rng.random(shape) * 0.2
+    vf1, vf2 = rng.random((4, *shape)), rng.random((4, *shape))
+    settings = (rng.random(shape), rng.random(shape) * 0.5, np.full(shape, 0.03), np.full(shape, 0.06), 1.0, 5)
+    results = []
+    for run in (module.run_tex_rd_ani, module.np_run_tex_rd_ani):
+        a, b = start_a.copy(), start_b.copy()
+        run(a, b, np.zeros(shape), np.zeros(shape), *settings, vf1, vf2, np.zeros(shape))
+        results.append((a, b))
+    check(np.allclose(results[0][0], results[1][0]) and np.allclose(results[0][1], results[1][1]),
+          "the NumPy simulation gives a different result")
+
+
 # --- Runner -------------------------------------------------------------------
 
 
 def main():
     print(f"\nBlender {bpy.app.version_string}, Python {sys.version.split()[0]}")
+    # Tissue also finds a Numba installed by its own button. Set TISSUE_TEST_NO_NUMBA
+    # to test the NumPy code paths, or TISSUE_TEST_SITE to a folder with Numba.
+    if os.environ.get("TISSUE_TEST_NO_NUMBA"):
+        class BlockNumba:
+            def find_spec(self, name, path=None, target=None):
+                if name.split('.')[0] in ('numba', 'llvmlite'):
+                    raise ImportError(f"{name} is blocked for this test run")
+        sys.meta_path.insert(0, BlockNumba())
+        print("Numba blocked")
+    elif os.environ.get("TISSUE_TEST_SITE"):
+        sys.path.insert(0, os.environ["TISSUE_TEST_SITE"])
+        import numba
+        print(f"Numba {numba.__version__}")
     enable_tissue()
     failures = []
     for func in TESTS:

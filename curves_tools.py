@@ -435,6 +435,10 @@ class tissue_convert_to_curve(Operator):
     def execute(self, context):
         ob = context.active_object
 
+        if self.mode == 'PARTICLES' and len(ob.particle_systems) == 0:
+            self.report({'ERROR'}, "The object doesn't have Particle Systems")
+            return {'CANCELLED'}
+
         crv = bpy.data.curves.new(ob.name + '_Curve', type='CURVE')
         crv.dimensions = '3D'
         new_ob = bpy.data.objects.new(ob.name + '_Curve', crv)
@@ -500,7 +504,10 @@ class tissue_update_convert_to_curve(Operator):
         ob0 = props.object
         if props.mode == 'PARTICLES':
             eval_ob = ob0.evaluated_get(context.evaluated_depsgraph_get())
-            system_id = min(props.system, len(eval_ob.particle_systems))
+            if len(eval_ob.particle_systems) == 0:
+                self.report({'ERROR'}, "The object doesn't have Particle Systems")
+                return {'CANCELLED'}
+            system_id = min(props.system, len(eval_ob.particle_systems)-1)
             psystem = eval_ob.particle_systems[system_id]
             ob.data.splines.clear()
             particles = psystem.particles

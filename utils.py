@@ -93,6 +93,11 @@ def np_lerp2(v00, v10, v01, v11, vx, vy, mode=''):
     return co2
 
 def calc_thickness(co2,n2,vz,a,weight):
+    if len(co2.shape) == 4:
+        # With Shape Keys co2 is (n_patches, n_sk, n_verts, 3), while the area and
+        # the weight can be shared by all keys: (n_patches, n_verts, 1)
+        if type(a) == np.ndarray and len(a.shape) == 3: a = a[:,None,:,:]
+        if type(weight) == np.ndarray and len(weight.shape) == 3: weight = weight[:,None,:,:]
     if 'numba' in sys.modules and use_numba_tess():
         if len(co2.shape) == 3:
             if type(a) != np.ndarray:

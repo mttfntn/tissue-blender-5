@@ -25,6 +25,7 @@ from .utils import *
 from .weight_tools import *
 from .numba_functions import *
 from .tissue_properties import *
+from .weight_reaction_diffusion import reaction_diffusion_remove_handler, reaction_diffusion_scene
 import os, mathutils
 from pathlib import Path
 
@@ -134,6 +135,8 @@ def tessellate_patch(props):
     random.seed(rand_seed)
     if len(_ob0.modifiers) == 0: gen_modifiers = False
 
+    id_layer = component_mode == 'COLLECTION' and consistent_wedges
+
     # Target mesh used for normals
     if normals_mode in ('SHAPEKEYS', 'OBJECT'):
         if fill_mode == 'PATCH':
@@ -174,7 +177,6 @@ def tessellate_patch(props):
 
     else:
         if fill_mode == 'FAN':
-            id_layer = component_mode == 'COLLECTION' and consistent_wedges
             ob0 = convert_to_fan(_ob0, _props, add_id_layer=id_layer)
         elif fill_mode == 'FRAME': ob0 = convert_to_frame(_ob0, _props)
         elif fill_mode == 'TRI': ob0 = convert_to_triangles(_ob0, _props)
@@ -521,6 +523,11 @@ def tessellate_patch(props):
                 except Exception:
                     # fallback to mesh UV layer if anything goes wrong
                     uv_shifts = get_uv_rotation_shifts(before_subsurf, uv_name=None, use_evaluated=False, prefer_attributes=False)
+
+            # The evaluated generator can have more faces than there are patches
+            # (e.g. after Subdivision): patches match the mesh before subdivision.
+            if len(uv_shifts) != len(mask):
+                uv_shifts = get_uv_rotation_shifts(before_subsurf, uv_name=None, use_evaluated=False, prefer_attributes=False)
 
             UV_shift = np.array(uv_shifts)[mask]
 
@@ -882,6 +889,8 @@ def tessellate_patch(props):
                 a2 = np_lerp2(a00,a10,a01,a11,vx,vy,'verts')
 
         store_coordinates = calc_thickness(co2,n2,vz,a2,weight_thickness)
+        # the Shape Keys below use the same normal for each face
+        faces_normals = n2 if normals_mode == 'FACES' else None
         co2 = n2 = vz = a2 = None
 
         if bool_shapekeys:
@@ -903,7 +912,8 @@ def tessellate_patch(props):
             co2 = np_lerp2(v00,v10,v01,v11,vx,vy,mode='shapekeys')
 
             if normals_mode == 'FACES':
-                n2 = n2[None,:,:,:]
+                # (n_patches, 1, 3) -> (n_patches, n_sk, n_verts1, 3)
+                n2 = np.broadcast_to(faces_normals[:,None,:,:], (n_patches,n_sk,n_verts1,3)).copy()
             else:
 
                 if normals_mode in ('SHAPEKEYS','OBJECT') and scale_mode == 'CONSTANT' and even_thickness:
@@ -1999,6 +2009,9 @@ class tissue_update_tessellate(Operator):
         except:
             self.report({'ERROR'},
                         "Active object must be Tessellated before Update")
+            return {'CANCELLED'}
+        if component_mode == 'COLLECTION' and component_coll is None:
+            self.report({'ERROR'}, "Please select a Collection of components")
             return {'CANCELLED'}
 
         # reset messages
@@ -3427,7 +3440,8 @@ def convert_to_frame(ob, props, use_modifiers=True):
             # tangent
             _vec1 = -vec1
             _vec0 = -vec0
-            ang = (pi - vec0.angle(vec1))/2
+            # coincident vertices give zero length vectors, which have no angle
+            ang = (pi - vec0.angle(vec1, 0))/2
             normal = face_normals[loop_index][i]
             tan0 = normal.cross(vec0)
             tan1 = normal.cross(vec1)
@@ -3788,7 +3802,9 @@ def merge_components(ob, props, use_bmesh):
         if props.close_mesh != 'NONE':
             bm.edges.ensure_lookup_table()
             # set crease
-            crease_layer = bm.edges.layers.float.new('crease_edge')
+            # edge_creases_ensure() may have created the layer already: a second
+            # one would be named 'crease_edge.001', which Blender ignores
+            crease_layer = bm.edges.layers.float.get('crease_edge') or bm.edges.layers.float.new('crease_edge')
             boundary_edges = [e for e in bm.edges if e.is_boundary or e.is_wire]
             n_materials = len(ob.material_slots)-1
             if props.close_mesh == 'BRIDGE':
@@ -3901,6 +3917,9 @@ class tissue_render_animation(Operator):
             return {'CANCELLED'}
 
         scene = context.scene
+        if scene.camera is None:
+            self.report({'ERROR'}, "The scene doesn't have a Camera")
+            return {'CANCELLED'}
         if self.start:
             remove_tissue_handler()
             reaction_diffusion_remove_handler(self, context)

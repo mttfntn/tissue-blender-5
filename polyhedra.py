@@ -554,7 +554,7 @@ class tissue_update_polyhedra(Operator):
         
         if props.crease > 0 and props.dissolve != 'INNER':
             edges_to_crease = [f.edges[2].index for f in new_faces]
-            crease_layer = bm1.edges.layers.float.new('crease_edge')
+            crease_layer = bm1.edges.layers.float.get('crease_edge') or bm1.edges.layers.float.new('crease_edge')
             bm1.edges.index_update()
             for edge_index in edges_to_crease:
                 bm1.edges[edge_index][crease_layer] = props.crease

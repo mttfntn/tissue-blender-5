@@ -581,6 +581,7 @@ class weight_laplacian(Operator):
         except:
             self.report({'ERROR'}, "Please select an Object")
             return {'CANCELLED'}
+        if context.mode == 'EDIT_MESH': bpy.ops.object.mode_set(mode='OBJECT')
 
         me = ob.data
         bm = bmesh.new()
@@ -1909,6 +1910,7 @@ class face_area_to_vertex_groups(Operator):
         except:
             self.report({'ERROR'}, "Please select an Object")
             return {'CANCELLED'}
+        if context.mode == 'EDIT_MESH': bpy.ops.object.mode_set(mode='OBJECT')
         ob.vertex_groups.new(name="Faces Area")
 
         areas = [[] for v in ob.data.vertices]
@@ -1974,6 +1976,7 @@ class random_weight(Operator):
         except:
             self.report({'ERROR'}, "Please select an Object")
             return {'CANCELLED'}
+        if context.mode == 'EDIT_MESH': bpy.ops.object.mode_set(mode='OBJECT')
         #ob.vertex_groups.new(name="Random")
         n_verts = len(ob.data.vertices)
         weight = np.random.uniform(low=self.min_val, high=self.max_val, size=(n_verts,))
@@ -2020,6 +2023,7 @@ class harmonic_weight(Operator):
 
     def execute(self, context):
         ob = context.active_object
+        if context.mode == 'EDIT_MESH': bpy.ops.object.mode_set(mode='OBJECT')
         if len(ob.vertex_groups) > 0:
             group_id = ob.vertex_groups.active_index
             ob.vertex_groups.new(name="Harmonic")
@@ -2483,6 +2487,12 @@ class tissue_weight_streamlines(Operator):
         except:
             self.report({'ERROR'}, "The object doesn't have Vertex Groups")
             return {'CANCELLED'}
+        # object_name and the group are only set by the dialog: when run from a
+        # script the operator falls back to the active object and its active group
+        if self.object_name not in bpy.data.objects:
+            self.object_name = context.object.name
+        if not self.vertex_group_streamlines and context.object.vertex_groups.active:
+            self.vertex_group_streamlines = context.object.vertex_groups.active.name
         ob = bpy.data.objects[self.object_name]
         ob.select_set(False)
 

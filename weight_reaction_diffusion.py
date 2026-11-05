@@ -441,7 +441,7 @@ class bake_reaction_diffusion(Operator):
     def execute(self, context):
         ob = context.object
         props = ob.reaction_diffusion_settings
-        frames = range(props.cache_frame_start, props.cache_frame_end) if props.input_mode == 'INTERACTIVE' else [props.cache_frame_start]
+        frames = range(props.cache_frame_start, props.cache_frame_end+1) if props.input_mode == 'INTERACTIVE' else [props.cache_frame_start]
         props.run = False if props.input_mode == 'STATIC' else True
         for frame in frames:
             context.scene.frame_current = frame
@@ -469,7 +469,7 @@ class reaction_diffusion_free_data(Operator):
         props.bool_cache = False
 
         folder = Path(props.cache_dir)
-        for i in range(props.cache_frame_start, props.cache_frame_end):
+        for i in range(props.cache_frame_start, props.cache_frame_end+1):
             data_a = folder / "a_{:04d}".format(i)
             if os.path.exists(data_a):
                 os.remove(data_a)
@@ -516,7 +516,8 @@ def reaction_diffusion_def(ob, bake=False):
             letters = string.ascii_letters
             random_name = ''.join(rnd.choice(letters) for i in range(6))
             if bpy.context.blend_data.filepath == '':
-                folder = Path(bpy.context.preferences.filepaths.temporary_directory)
+                # the preference is empty by default, which would mean the current directory
+                folder = Path(bpy.context.preferences.filepaths.temporary_directory or bpy.app.tempdir)
                 folder = folder / 'reaction_diffusion_cache' / random_name
             else:
                 folder = '//' + Path(bpy.context.blend_data.filepath).stem

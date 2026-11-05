@@ -42,6 +42,35 @@ from bpy.props import (
 from .utils import *
 
 
+def np_tex_laplacian_ani(arr, vf):
+    # Same as tex_laplacian_ani in numba_functions.py
+    nx, ny = arr.shape
+    i0 = np.arange(nx)-1
+    i0[0] = 1
+    i1 = np.arange(nx)+1
+    i1[nx-1] = nx-2
+    j0 = np.arange(ny)-1
+    j0[0] = 1
+    j1 = np.arange(ny)+1
+    j1[ny-1] = ny-2
+    arr2 = arr*2
+    return ((arr[i0,:] + arr[i1,:] - arr2)*vf[0] +
+            (arr[:,j0] + arr[:,j1] - arr2)*vf[1] +
+            (arr[i0][:,j0] + arr[i1][:,j1] - arr2)*vf[2] +
+            (arr[i1][:,j0] + arr[i0][:,j1] - arr2)*vf[3])
+
+
+def np_run_tex_rd_ani(A, B, lap_A, lap_B, diff_A, diff_B, f, k, dt, steps, vf1, vf2, brush):
+    # Slower replacement of run_tex_rd_ani, used when Numba is not installed
+    for t in range(steps):
+        lap_A[:] = np_tex_laplacian_ani(A, vf2)
+        lap_B[:] = np_tex_laplacian_ani(B, vf1)
+        B += brush
+        ab2 = A*B**2
+        A += (lap_A*diff_A - ab2 + f*(1-A))*dt
+        B += (lap_B*diff_B + ab2 - (k+f)*B)*dt
+
+
 def tex_reaction_diffusion_add_handler(self, context):
     # remove existing handlers
     tex_reaction_diffusion_remove_handler(self, context)
@@ -385,7 +414,11 @@ def tex_reaction_diffusion_def(ob, bake=False):
     print("Reshape data time: " + str(timeit.default_timer() - start_time) + " sec")
 
     start_time = timeit.default_timer()
-    run_tex_rd_ani(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt, time_steps, vf1, vf2, brush)
+    if 'run_tex_rd_ani' in globals():
+        run_tex_rd_ani(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt, time_steps, vf1, vf2, brush)
+    else:
+        print('Not using Numba! The simulation could be slow.')
+        np_run_tex_rd_ani(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt, time_steps, vf1, vf2, brush)
     print("Simulation time: " + str(timeit.default_timer() - start_time) + " sec")
 
     start_time = timeit.default_timer()
