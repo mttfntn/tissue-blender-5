@@ -81,4 +81,4 @@ Tissue is created and maintained by [Alessandro Zomparelli](https://github.com/a
 
 If you like Tissue, consider supporting Alessandro's work on [Patreon](https://www.patreon.com/alessandrozomparelli).
 
-Tissue is free software, released under the [GNU General Public License v3.0 or later](https://www.gnu.org/licenses/gpl-3.0.html). This fork uses the same license.
+Tissue is free software, released under the GNU General Public License v3.0 or later. This fork uses the same license: see [LICENSE](LICENSE).
