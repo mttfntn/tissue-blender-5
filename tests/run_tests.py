@@ -9,6 +9,7 @@
 # Every test builds a small scene, runs one Tissue tool and checks its result.
 # The script exits with code 1 if any test fails, so CI marks the run as failed.
 
+import math
 import os
 import shutil
 import sys
@@ -518,6 +519,106 @@ def tessellate_shape_keys():
                 except Exception as e:
                     failures.append(f"{case}: {str(e).strip().splitlines()[-1]}")
     check(not failures, "\n".join(failures))
+
+
+def add_hexagon(with_quad=False):
+    # One flat hexagon, optionally with a quad attached to one of its edges.
+    verts = [(math.cos(math.radians(60 * i)), math.sin(math.radians(60 * i)), 0) for i in range(6)]
+    faces = [list(range(6))]
+    if with_quad:
+        verts += [(2, 0, 0), (1.5, 0.866, 0)]
+        faces.append([0, 6, 7, 1])
+    mesh = bpy.data.meshes.new("Hexagon")
+    mesh.from_pydata(verts, [], faces)
+    ob = bpy.data.objects.new("Hexagon", mesh)
+    bpy.context.collection.objects.link(ob)
+    ob.modifiers.new("Subdivision", 'SUBSURF')
+    bpy.context.view_layer.update()
+    return ob
+
+
+def check_no_temporary_objects():
+    left = [o.name for o in bpy.data.objects if "_tissue_tmp" in o.name or o.name.endswith("_before_subs")]
+    check(not left, f"temporary objects were left in the file: {left}")
+
+
+@test
+def patch_without_quads():
+    # This used to raise an IndexError.
+    base = add_hexagon()
+    base.hide_render = True
+    component = add_cube()
+    select_only(component, base, active=base)
+    check_reports_error(lambda: bpy.ops.object.tissue_tessellate(
+        generator=base.name, component=component.name, fill_mode='PATCH'), "4-sided")
+    check_no_temporary_objects()
+    check(base.hide_render, "the visibility of the Base was not restored")
+    check(bpy.context.view_layer.objects.active == base, "the Base is not active anymore")
+
+
+@test
+def patch_without_quads_on_update():
+    # A tessellation that already exists has to stay as it is.
+    base = add_hexagon()
+    component = add_cube()
+    select_only(component, base, active=base)
+    check_finished(bpy.ops.object.tissue_tessellate(
+        generator=base.name, component=component.name, fill_mode='FAN'), "Tessellate")
+    out = bpy.context.object
+    faces = len(out.data.polygons)
+    props = out.tissue_tessellate
+    props.bool_hold = True
+    props.fill_mode = 'PATCH'
+    props.bool_hold = False
+    select_only(out)
+    check_reports_error(bpy.ops.object.tissue_update_tessellate, "4-sided")
+    check("4-sided" in props.error_message, "the panel doesn't show the error")
+    check(len(out.data.polygons) == faces, "the failed update changed the tessellation")
+    check_no_temporary_objects()
+
+
+@test
+def patch_with_some_quads():
+    # Faces without 4 sides are skipped.
+    base = add_hexagon(with_quad=True)
+    component = add_cube()
+    select_only(component, base, active=base)
+    check_finished(bpy.ops.object.tissue_tessellate(
+        generator=base.name, component=component.name, fill_mode='PATCH'), "Tessellate")
+    check(len(bpy.context.object.data.polygons) == 6, f"got {len(bpy.context.object.data.polygons)} faces")
+
+
+@test
+def patch_on_selected_faces():
+    # Selected faces without 4 sides used to get through the filter.
+    for select_quad in (True, False):
+        reset_scene()
+        base = add_hexagon(with_quad=True)
+        base.data.polygons[0].select = True
+        base.data.polygons[1].select = select_quad
+        component = add_cube()
+        select_only(component, base, active=base)
+        run = lambda: bpy.ops.object.tissue_tessellate(generator=base.name, component=component.name,
+                                                       fill_mode='PATCH', bool_selection=True)
+        if select_quad:
+            check_finished(run(), "Tessellate")
+            check(len(bpy.context.object.data.polygons) == 6, f"got {len(bpy.context.object.data.polygons)} faces")
+        else:
+            check_reports_error(run, "4-sided")
+            check_no_temporary_objects()
+
+
+@test
+def patch_with_modifier_after_subdivision():
+    # This message was never shown: the error code was read as a list of objects.
+    base = add_grid()
+    base.modifiers.new("Subdivision", 'SUBSURF')
+    base.modifiers.new("Bevel", 'BEVEL')
+    component = add_cube()
+    select_only(component, base, active=base)
+    check_reports_error(lambda: bpy.ops.object.tissue_tessellate(
+        generator=base.name, component=component.name, fill_mode='PATCH'), "Modifiers")
+    check_no_temporary_objects()
 
 
 @test

@@ -874,7 +874,7 @@ def get_patches(me_low, me_high, sides, subs, bool_selection): #, bool_material_
     if bool_selection:
         mask_selection = [True]*nf
         me_low.polygons.foreach_get('select',mask_selection)
-        mask = np.array(mask_selection)
+        mask = np.logical_and(mask, mask_selection)
 
     materials = [1]*nf
     me_low.polygons.foreach_get('material_index',materials)

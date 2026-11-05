@@ -23,7 +23,7 @@ git clone https://github.com/mttfntn/tissue-blender-5.git
 blender --command extension build --source-dir tissue-blender-5 --output-dir .
 ```
 
-This creates `tissue-0.3.77.zip`. Then in Blender:
+This creates `tissue-0.3.78.zip`. Then in Blender:
 
 1. If you already have Tissue, open **Edit > Preferences > Add-ons**, find it and uninstall it. This fork uses the same add-on ID, so the two can't be active together.
 2. In the dropdown at the top right of the Add-ons preferences, choose **Install from Disk** and pick the zip.
@@ -39,6 +39,9 @@ Tissue works without [Numba](https://numba.pydata.org/), but it is faster with i
 - Frame fill crashed with 2 or more iterations
 - Collection mode gave a traceback when no collection was selected. It now shows a message
 - Creases on merged boundaries were written to `crease_edge.001`, which Blender ignores, so they had no effect
+- Patch fill crashed on a Base without 4-sided faces, such as a Dual Mesh of hexagons. It now shows a message that suggests Fan, and an existing tessellation stays as it is
+- Patch fill crashed on selected faces with more than 4 sides, when using On selected Faces
+- The message about modifiers after the last Subdivision was never shown, because Tissue crashed first
 
 **Render Animation**
 - The operator always crashed with a `NameError`
@@ -69,7 +72,7 @@ Tissue uses Numba whenever it can find it. To choose which code is tested:
 - `TISSUE_TEST_NO_NUMBA=1` blocks Numba, to test the NumPy code
 - `TISSUE_TEST_SITE=<folder>` uses the Numba installed in that folder
 
-The suite has 46 tests, on small meshes. They don't cover the Install Numba button or the help links.
+The suite has 51 tests, on small meshes. They don't cover the Install Numba button or the help links.
 
 ## Documentation
 

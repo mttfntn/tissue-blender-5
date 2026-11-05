@@ -335,6 +335,12 @@ def tessellate_patch(props):
     patch_faces0 = int((sides-2)**2)
 
     if fill_mode == 'PATCH':
+        quads = [p for p in before_subsurf.polygons if p.loop_total == 4 and (p.select or not bool_selection)]
+        if len(quads) == 0:
+            bpy.data.meshes.remove(before_subsurf)
+            bpy.data.meshes.remove(ob0.data)
+            return "patch_faces_error"
+        ob.data.clear_geometry()
         all_verts, mask, materials = get_patches(before_subsurf, me0, 4, levels, bool_selection)
     else:
         all_verts, mask, materials = get_quads(me0, bool_selection)
@@ -1814,6 +1820,8 @@ class tissue_tessellate(Operator):
         except RuntimeError as e:
             bpy.data.objects.remove(new_ob)
             remove_temp_objects()
+            context.view_layer.objects.active = ob0
+            ob0.select_set(True)
             self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
         if not bool_update:
@@ -2121,7 +2129,9 @@ class tissue_update_tessellate(Operator):
         ob_matrix_world = ob.matrix_world
 
         #if ob not in components:
-        ob.data.clear_geometry()    # Faster with heavy geometries (from previous tessellations)
+        # Faster with heavy geometries (from previous tessellations). Patch can still
+        # refuse the Base, so tessellate_patch clears it after checking.
+        if fill_mode != 'PATCH': ob.data.clear_geometry()
 
         for iter in range(iterations):
             props['generator'] = base_ob
@@ -2163,7 +2173,8 @@ class tissue_update_tessellate(Operator):
             #if type(same_iteration) != list:#is not bpy.types.Object and :
             #    return {'CANCELLED'}
 
-            for id, new_ob in enumerate(same_iteration):
+            # tessellate_patch returns a string instead of a list in case of errors
+            for id, new_ob in enumerate(same_iteration if type(same_iteration) == list else []):
                 # rename, make active and change transformations
                 new_ob.name = '_tissue_tmp_{}_{}'.format(iter,id)
                 new_ob.select_set(True)
@@ -2284,12 +2295,22 @@ class tissue_update_tessellate(Operator):
         errors = {}
         errors["modifiers_error"] = "Modifiers that change the topology of the mesh \n" \
                                     "after the last Subsurf (or Multires) are not allowed."
+        errors["patch_faces_error"] = "Patch needs 4-sided faces in the Base. Use Fan for faces with more sides."
         if new_ob in errors:
             for o in iter_objects:
                 try: bpy.data.objects.remove(o)
                 except: pass
             #try: bpy.data.meshes.remove(data1)
             #except: pass
+            remove_temp_objects()
+            # Restore Base and Component visibility
+            ob0.hide_set(ob0_hide)
+            ob0.hide_viewport = ob0_hidev
+            ob0.hide_render = ob0_hider
+            if component_mode == 'OBJECT':
+                ob1.hide_set(ob1_hide)
+                ob1.hide_viewport = ob1_hidev
+                ob1.hide_render = ob1_hider
             context.view_layer.objects.active = ob
             ob.select_set(True)
             message = errors[new_ob]
