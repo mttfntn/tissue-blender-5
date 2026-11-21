@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Problem that also happens in the official Tissue
+    url: https://github.com/alessandro-zomparelli/tissue/issues
+    about: This is a fork. Report problems and ideas that are not specific to it to Alessandro Zomparelli's Tissue.
+  - name: Documentation
+    url: https://github.com/mttfntn/tissue-blender-5/blob/main/docs/README.md
+    about: How each Tissue tool works, with images and video tutorials.
+  - name: Report a security problem privately
+    url: https://github.com/mttfntn/tissue-blender-5/security/advisories/new
+    about: Please don't open a public issue for security problems.

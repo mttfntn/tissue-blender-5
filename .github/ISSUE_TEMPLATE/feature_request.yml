@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest an improvement to this fork of Tissue
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This is not the official Tissue.** This fork mainly fixes bugs and keeps Tissue working on Blender 5.3. New tools and larger features belong in [the official Tissue](https://github.com/alessandro-zomparelli/tissue/issues) by Alessandro Zomparelli, so that every Tissue user gets them. Ideas about this fork itself (Blender 5.3 support, its fixes, packaging) are welcome here.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation or the workflow, not only the solution. Screenshots help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you imagine it working.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+      description: Workarounds, or other add-ons or tools that do something similar.

@@ -1,0 +1,102 @@
+name: Bug report
+description: Something in this fork of Tissue for Blender 5.3 doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **This is not the official Tissue.** It's a fork of [Tissue by Alessandro Zomparelli](https://github.com/alessandro-zomparelli/tissue), with extra fixes, made for Blender 5.3.
+
+        - If the problem **also happens with the official Tissue**, please report it on [the official tracker](https://github.com/alessandro-zomparelli/tissue/issues), so that every Tissue user gets the fix.
+        - If it happens **only with this fork** (for example with a fix listed in the README, or only on Blender 5.3), report it here.
+
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Does it also happen with the official Tissue?
+      description: To check, install the official Tissue from its [releases](https://github.com/alessandro-zomparelli/tissue/releases). Uninstall this fork first, the two share the same add-on ID.
+      options:
+        - No, only with this fork
+        - I can't check (for example, the official Tissue doesn't run on my setup)
+        - I didn't check
+    validations:
+      required: true
+
+  - type: input
+    id: blender
+    attributes:
+      label: Blender version
+      description: Help › About Blender. This fork requires Blender 5.3 or later.
+      placeholder: "5.3.0"
+    validations:
+      required: true
+
+  - type: input
+    id: addon
+    attributes:
+      label: Tissue version
+      description: Edit › Preferences › Add-ons › Tissue
+      placeholder: "0.3.80"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: dropdown
+    id: numba
+    attributes:
+      label: Is Numba installed?
+      description: Shown in Tissue's preferences (Edit › Preferences › Add-ons › Tissue). Tissue runs different code with and without it.
+      options:
+        - "Yes"
+        - "No"
+        - I don't know
+
+  - type: input
+    id: tool
+    attributes:
+      label: Tool and options
+      description: Which Tissue tool, and which options.
+      placeholder: Tessellate, Fill Mode Patch, 2 iterations
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Starting from a new scene or from your file, the exact steps that lead to the problem.
+      placeholder: |
+        1. Add a plane (Base) and a cube (Component)
+        2. Select the cube, then the plane, and click Tessellate
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or a .blend file
+      description: Drag images here. A small .blend that shows the problem helps most (zip it to attach it).
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Error messages
+      description: If Blender shows an error, copy it here (Window › Toggle System Console on Windows, or start Blender from a terminal).
+      render: shell
