@@ -80,5 +80,8 @@ jobs:
           if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
             echo "The tag ${GITHUB_REF_NAME} doesn't match version $version in the manifest"; exit 1
           fi
+          # checkout only fetches the commit: get the tag itself, whose message
+          # becomes the release notes (without it gh uses the commit message)
+          git fetch --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           gh release create "${GITHUB_REF_NAME}" dist/*.zip \
             --title "Tissue ${version} for Blender 5.3" --notes-from-tag
