@@ -1,13 +1,16 @@
 # Tissue for Blender 5.3
 
-[![Blender 5.3](https://img.shields.io/badge/Blender-5.3-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/download/)
-[![Release v0.3.80](https://img.shields.io/badge/release-v0.3.80-0A7BBB)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
+[![Blender](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmttfntn%2Ftissue-blender-5%2Fmain%2Ftissue%2Fblender_manifest.toml&query=%24.blender_version_min&label=Blender&color=E87D0D&logo=blender&logoColor=white)](https://www.blender.org/download/)
+[![Release](https://img.shields.io/github/v/release/mttfntn/tissue-blender-5)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
+[![Download size](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmttfntn%2Ftissue-blender-5%2Fbadges%2Frelease-size.json)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
 [![Tests](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml)
-[![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4C9A2A)](LICENSE)
-[![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://docs.blender.org/api/current/)
+[![License](https://img.shields.io/github/license/mttfntn/tissue-blender-5)](LICENSE)
+[![Language](https://img.shields.io/github/languages/top/mttfntn/tissue-blender-5)](tissue)
 [![Fork of Tissue by Alessandro Zomparelli](https://img.shields.io/badge/fork%20of-Tissue%20by%20Alessandro%20Zomparelli-555555)](https://github.com/alessandro-zomparelli/tissue)
 
 A fork of [Tissue](https://github.com/alessandro-zomparelli/tissue), the Blender add-on for computational design by Alessandro Zomparelli (Co-de-iT), with extra bug fixes, made for Blender 5.3.
+
+![Tissue: tessellation, dual mesh, weight tools, contour curves and more](docs/images/cover.jpg)
 
 Older Tissue releases don't work properly on Blender 5: on 0.3.71, Tessellate and many other tools fail with `this type doesn't support IDProperties`. Upstream 0.3.76 fixes that error. This fork starts from 0.3.76 and fixes the bugs listed below.
 
@@ -100,6 +103,13 @@ The suite has 52 tests, on small meshes. They don't cover the Install Numba butt
 ## Documentation
 
 The documentation, with video tutorials, is in the [docs](docs/README.md) folder.
+
+## Reporting problems and contributing
+
+This is not the official Tissue. If a problem also happens with [the official Tissue](https://github.com/alessandro-zomparelli/tissue), please report it [there](https://github.com/alessandro-zomparelli/tissue/issues). Problems that happen only with this fork go in [this repository's issues](https://github.com/mttfntn/tissue-blender-5/issues/new/choose).
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): how to report a problem, run the tests and send a pull request
+- [SECURITY.md](SECURITY.md): how to report a security problem privately
 
 ## Credits and license
 
