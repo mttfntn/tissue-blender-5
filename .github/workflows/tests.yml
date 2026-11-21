@@ -1,5 +1,5 @@
 # Runs tests/run_tests.py inside several Blender versions on every push and
-# pull request, and once a week to catch changes in Blender's beta.
+# pull request, and once a week to catch changes in the next Blender's daily build.
 name: Tests
 
 on:
@@ -18,10 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        blender: ["4.5", "5.0", "5.1", "5.2"]
+        blender: ["4.5", "5.0", "5.1", "5.2", "5.3"]
         beta: [false]
         include:
-          - blender: "5.3"
+          - blender: "5.4"
             beta: true
 
     steps:

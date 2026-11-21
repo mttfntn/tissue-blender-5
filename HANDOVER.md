@@ -1,0 +1,121 @@
+# Handover
+
+This guide is for anyone who wants to change this fork of Tissue. It explains how the add-on is organized, how to test a change and how to make a new release. To install the add-on and see what this fork fixes, read the [README](README.md).
+
+## In short
+
+- Tissue is a Blender add-on written in Python. There's nothing to compile: Blender runs the `.py` files directly.
+- This repository is a fork of [Alessandro Zomparelli's Tissue](https://github.com/alessandro-zomparelli/tissue), version 0.3.76, with bug fixes for Blender 5.
+- Every change is checked with [tests/run_tests.py](tests/run_tests.py), which runs inside Blender. Run it before every commit.
+- The add-on is distributed as a zip file built with Blender's own `extension build` command.
+
+## What you need
+
+- **Blender 5.3** (any version from 4.5 works, but this fork was tested on 5.3).
+- **Git**, to get the code and publish changes.
+- A text editor. [VS Code](https://code.visualstudio.com/) with the Python extension works well.
+- Optional: **[Numba](https://numba.pydata.org/)**, a Python package that makes Tissue faster. Tissue can install it from its preferences. Without it, Tissue uses slower NumPy code that gives the same results.
+
+## How the code is organized
+
+Each tool lives in its own file. Every file starts with a short description of what it contains.
+
+| File | What it contains |
+|---|---|
+| `__init__.py` | Entry point: the list of every class Blender registers, and the settings Tissue adds to every object |
+| `tessellate_numpy.py` | Tessellate, the main tool, with its operators and panels |
+| `tissue_properties.py` | Settings stored on objects, and the handler that updates animated Tissue objects |
+| `utils.py` | Helpers shared by all tools: mesh conversion, NumPy access to mesh data, math |
+| `numba_functions.py` | Faster versions of the heaviest loops, used only when Numba is installed |
+| `weight_tools.py` | Vertex group tools: Formula, Curvature, Laplacian, Streamlines, conversions... |
+| `weight_reaction_diffusion.py` | Reaction-Diffusion on vertex groups |
+| `texture_reaction_diffusion.py` | Reaction-Diffusion on images |
+| `contour_curves.py` | Contour Curves |
+| `curves_tools.py` | Convert to Curve |
+| `polyhedra.py` | Polyhedral Wireframe |
+| `dual_mesh.py`, `lattice.py`, `material_tools.py`, `uv_to_mesh.py` | The smaller tools |
+| `config.py`, `utils_pip.py` | Add-on preferences and the Install Numba button |
+| `blender_manifest.toml` | Name, version and build settings of the extension |
+| `tests/run_tests.py` | The tests |
+| `docs/` | The user documentation, with images |
+
+### How Tessellate works
+
+Tessellate copies a **Component** onto every face of a **Base** mesh (called the generator in the code).
+
+1. The **Tessellate** button runs `tissue_tessellate`. It creates the new object and stores every setting on it, in `object.tissue_tessellate`.
+2. It then calls `tissue_update_tessellate`, the **Refresh** operator. Refresh reads the settings back from the object, so a tessellation can be rebuilt at any time.
+3. Refresh runs `tessellate_patch` once per iteration. That function prepares the Base for the chosen Fill Mode, maps the Component onto every face and returns the new geometry.
+4. Refresh then merges the result if Merge is on and puts the new mesh into the object.
+
+Changing a setting in the panel runs Refresh automatically, through the `update=` functions of the settings in `tissue_properties.py`.
+
+## Making a change
+
+1. Edit the `.py` files.
+2. To try the change in Blender, either:
+   - build and install the zip, as described in [Making a release](#making-a-release), or
+   - copy or link the repository folder into Blender's add-ons folder under the name `tissue`, then restart Blender.
+3. Run the tests and check they all pass.
+4. Add a test for the bug you fixed or the feature you added. Each test is a function marked with `@test`. It builds a small scene, runs one tool and checks the result.
+5. Add a line to the list of fixes in the README.
+
+### Running the tests
+
+From the repository folder:
+
+```
+blender --background --factory-startup --python-exit-code 1 --python tests/run_tests.py
+```
+
+On Windows, write Blender's full path, for example `"C:\Program Files\Blender Foundation\Blender 5.3\blender.exe"`.
+
+The last line says how many tests passed. Tissue uses Numba whenever it can find it, so Numba and NumPy are tested separately:
+
+- with `TISSUE_TEST_NO_NUMBA=1` set, Numba is blocked and the NumPy code is tested
+- with `TISSUE_TEST_SITE` set to a folder containing Numba, that Numba is used
+
+When you change Tessellate or anything that both versions use, run the tests both ways.
+
+GitHub also runs the tests on Blender 4.5 to 5.3, and on the next Blender's daily build, whenever you push. The results are in the **Actions** tab of the repository.
+
+## Making a release
+
+1. Raise the version in two places: `version` in `blender_manifest.toml`, and `"version"` in `_bl_info_fallback` in `__init__.py`.
+2. Update the version and the list of fixes in the README.
+3. Build the zip from the folder that contains the repository:
+
+```
+blender --command extension build --source-dir tissue-blender-5 --output-dir .
+```
+
+4. Install the zip in Blender and check that it works.
+5. Commit and push. To offer the zip as a download, attach it to a new release in the **Releases** section on GitHub.
+
+The zip leaves out the tests, the documentation and these handover files, as listed in `paths_exclude_pattern` in `blender_manifest.toml`.
+
+## Getting updates from the original Tissue
+
+Alessandro Zomparelli keeps developing Tissue. To bring his changes into this fork:
+
+```
+git remote add upstream https://github.com/alessandro-zomparelli/tissue.git
+git fetch upstream
+git merge upstream/master
+```
+
+Expect conflicts in the files this fork changed, mostly `tessellate_numpy.py`, `utils.py` and `weight_tools.py`. Run the tests after merging. Some of his work happens on other branches first, such as `b5-dev`.
+
+## Things to know
+
+- **Shared names:** most files start with `from .utils import *`, so a name defined in one file can be visible in many others. Before removing or renaming anything, search the whole repository for it.
+- **`any`, `min`, `max` and similar:** some files import all of NumPy with `from numpy import *`, so these names may be NumPy's versions, which behave differently. For example, `any()` on a generator is always true. Use lists or `np.` explicitly.
+- **Operator tooltips:** in Blender, an operator class's docstring becomes its tooltip, so describe operator classes with `#` comments, not docstrings.
+- **Errors:** report problems with `self.report({'ERROR'}, "...")` and return `{'CANCELLED'}`. Inside `tessellate_patch`, return an error code string instead, which Refresh turns into the message shown in the panel.
+- **Blender versions:** check changes against the [Blender Python API documentation](https://docs.blender.org/api/current/) of the oldest version you want to support. Older Tissue releases broke on Blender 5 because the API changed.
+
+## Known limits
+
+- Patch fill only works on 4-sided faces. For hexagons, such as a Dual Mesh, use Fan fill with a 60° slice of the shape as the Component.
+- If Patch fill runs several iterations and an error only appears after the first one, the existing tessellation is emptied. Refresh with valid settings rebuilds it.
+- Some code is always used because of a hard-coded `or True`, in `lattice.py` and in `convert_to_frame`. It works, but the conditions could be simplified.
