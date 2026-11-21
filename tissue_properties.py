@@ -2,6 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Settings stored on every object (tissue_prop, tissue_tessellate_prop), the frame
+handler that refreshes animated Tissue objects (anim_tissue), and helpers that
+copy settings between the Tessellate operator, objects and the dict read by
+tessellate_patch.
+"""
+
 import bpy
 from bpy.types import (
         Operator,
@@ -56,17 +62,14 @@ def anim_tessellate_active(self, context):
             bpy.ops.object.tissue_update_tessellate()
         except: pass
 
-def anim_tessellate_object(ob):
-    try:
-        #bpy.context.view_layer.objects.active = ob
-        bpy.ops.object.tissue_update_tessellate()
-    except:
-        return None
 
 #from bpy.app.handlers import persistent
 
 
 def anim_tissue(scene, depsgraph=None):
+    """Frame handler: refreshes every Tissue object with Animatable on (tissue.bool_run),
+    and the objects it depends on, at each frame change.
+    """
     tissue_time(None,'Tissue: Animating Tissue objects at frame {}...'.format(scene.frame_current), levels=0)
     start_time = time.time()
 
@@ -143,15 +146,6 @@ def remove_polyhedra_handler():
         if "anim_polyhedra" in str(h):
             tissue_handlers.append(h)
     for h in tissue_handlers: blender_handlers.remove(h)
-
-def set_polyhedra_handler(self, context):
-    remove_polyhedra_handler()
-    for o in context.scene.objects:
-        if o.tissue.bool_run:
-            blender_handlers = bpy.app.handlers.frame_change_post
-            blender_handlers.append(anim_polyhedra)
-            break
-    return
 
 
 class tissue_prop(PropertyGroup):
@@ -818,6 +812,9 @@ class tissue_tessellate_prop(PropertyGroup):
             )
 
 def store_parameters(operator, ob):
+    """Copy the settings of the Tessellate operator to the object, so it can be
+    refreshed later.
+    """
     ob.tissue_tessellate.bool_hold = True
     if operator.generator in bpy.data.objects.keys():
         ob.tissue_tessellate.generator = bpy.data.objects[operator.generator]
@@ -911,92 +908,11 @@ def store_parameters(operator, ob):
     ob.tissue_tessellate.bool_hold = False
     return ob
 
-def load_parameters(operator, ob):
-    operator.generator = ob.tissue_tessellate.generator.name
-    operator.component = ob.tissue_tessellate.component.name
-    operator.component_coll = ob.tissue_tessellate.component_coll.name
-    operator.zscale = ob.tissue_tessellate.zscale
-    operator.offset = ob.tissue_tessellate.offset
-    operator.gen_modifiers = ob.tissue_tessellate.gen_modifiers
-    operator.com_modifiers = ob.tissue_tessellate.com_modifiers
-    operator.mode = ob.tissue_tessellate.mode
-    operator.rotation_mode = ob.tissue_tessellate.rotation_mode
-    operator.rotation_shift = ob.tissue_tessellate.rotation_shift
-    operator.rotation_direction = ob.tissue_tessellate.rotation_direction
-    operator.merge = ob.tissue_tessellate.merge
-    operator.merge_open_edges_only = ob.tissue_tessellate.merge_open_edges_only
-    operator.merge_thres = ob.tissue_tessellate.merge_thres
-    operator.scale_mode = ob.tissue_tessellate.scale_mode
-    operator.bool_random = ob.tissue_tessellate.bool_random
-    operator.rand_seed = ob.tissue_tessellate.rand_seed
-    operator.coll_rand_seed = ob.tissue_tessellate.coll_rand_seed
-    operator.rand_step = ob.tissue_tessellate.rand_step
-    operator.fill_mode = ob.tissue_tessellate.fill_mode
-    operator.bool_vertex_group = ob.tissue_tessellate.bool_vertex_group
-    operator.bool_selection = ob.tissue_tessellate.bool_selection
-    operator.bool_shapekeys = ob.tissue_tessellate.bool_shapekeys
-    operator.bool_smooth = ob.tissue_tessellate.bool_smooth
-    operator.bool_materials = ob.tissue_tessellate.bool_materials
-    operator.bool_material_id = ob.tissue_tessellate.bool_material_id
-    operator.material_id = ob.tissue_tessellate.material_id
-    operator.bool_dissolve_seams = ob.tissue_tessellate.bool_dissolve_seams
-    operator.iterations = ob.tissue_tessellate.iterations
-    operator.bool_advanced = ob.tissue_tessellate.bool_advanced
-    operator.normals_mode = ob.tissue_tessellate.normals_mode
-    operator.bool_combine = ob.tissue_tessellate.bool_combine
-    operator.combine_mode = ob.tissue_tessellate.combine_mode
-    operator.bounds_x = ob.tissue_tessellate.bounds_x
-    operator.bounds_y = ob.tissue_tessellate.bounds_y
-    operator.cap_faces = ob.tissue_tessellate.cap_faces
-    operator.close_mesh = ob.tissue_tessellate.close_mesh
-    operator.bridge_cuts = ob.tissue_tessellate.bridge_cuts
-    operator.bridge_smoothness = ob.tissue_tessellate.bridge_smoothness
-    operator.cap_material_offset = ob.tissue_tessellate.cap_material_offset
-    operator.patch_subs = ob.tissue_tessellate.patch_subs
-    operator.frame_boundary = ob.tissue_tessellate.frame_boundary
-    operator.fill_frame = ob.tissue_tessellate.fill_frame
-    operator.boundary_mat_offset = ob.tissue_tessellate.boundary_mat_offset
-    operator.fill_frame_mat = ob.tissue_tessellate.fill_frame_mat
-    operator.frame_thickness = ob.tissue_tessellate.frame_thickness
-    operator.frame_boundary_thickness = ob.tissue_tessellate.frame_boundary_thickness
-    operator.frame_mode = ob.tissue_tessellate.frame_mode
-    operator.use_origin_offset = ob.tissue_tessellate.use_origin_offset
-    operator.vertex_group_thickness = ob.tissue_tessellate.vertex_group_thickness
-    operator.invert_vertex_group_thickness = ob.tissue_tessellate.invert_vertex_group_thickness
-    operator.vertex_group_thickness_factor = ob.tissue_tessellate.vertex_group_thickness_factor
-    operator.vertex_group_frame_thickness = ob.tissue_tessellate.vertex_group_frame_thickness
-    operator.invert_vertex_group_frame_thickness = ob.tissue_tessellate.invert_vertex_group_frame_thickness
-    operator.vertex_group_frame_thickness_factor = ob.tissue_tessellate.vertex_group_frame_thickness_factor
-    operator.face_weight_frame = ob.tissue_tessellate.face_weight_frame
-    operator.vertex_group_distribution = ob.tissue_tessellate.vertex_group_distribution
-    operator.invert_vertex_group_distribution = ob.tissue_tessellate.invert_vertex_group_distribution
-    operator.vertex_group_distribution_factor = ob.tissue_tessellate.vertex_group_distribution_factor
-    operator.vertex_group_cap_owner = ob.tissue_tessellate.vertex_group_cap_owner
-    operator.vertex_group_cap = ob.tissue_tessellate.vertex_group_cap
-    operator.invert_vertex_group_cap = ob.tissue_tessellate.invert_vertex_group_cap
-    operator.vertex_group_bridge_owner = ob.tissue_tessellate.vertex_group_bridge_owner
-    operator.vertex_group_bridge = ob.tissue_tessellate.vertex_group_bridge
-    operator.invert_vertex_group_bridge = ob.tissue_tessellate.invert_vertex_group_bridge
-    operator.vertex_group_rotation = ob.tissue_tessellate.vertex_group_rotation
-    operator.invert_vertex_group_rotation = ob.tissue_tessellate.invert_vertex_group_rotation
-    operator.smooth_normals = ob.tissue_tessellate.smooth_normals
-    operator.smooth_normals_iter = ob.tissue_tessellate.smooth_normals_iter
-    operator.smooth_normals_uv = ob.tissue_tessellate.smooth_normals_uv
-    operator.vertex_group_smooth_normals = ob.tissue_tessellate.vertex_group_smooth_normals
-    operator.invert_vertex_group_smooth_normals = ob.tissue_tessellate.invert_vertex_group_smooth_normals
-    operator.component_mode = ob.tissue_tessellate.component_mode
-    operator.consistent_wedges = ob.tissue_tessellate.consistent_wedges
-    operator.normals_x = ob.tissue_tessellate.normals_x
-    operator.normals_y = ob.tissue_tessellate.normals_y
-    operator.normals_z = ob.tissue_tessellate.normals_z
-    operator.vertex_group_scale_normals = ob.tissue_tessellate.vertex_group_scale_normals
-    operator.invert_vertex_group_scale_normals = ob.tissue_tessellate.invert_vertex_group_scale_normals
-    operator.boundary_variable_offset = ob.tissue_tessellate.boundary_variable_offset
-    operator.auto_rotate_boundary = ob.tissue_tessellate.auto_rotate_boundary
-    operator.preserve_quads = ob.tissue_tessellate.preserve_quads
-    return ob
 
 def props_to_dict(ob):
+    """The tessellation settings of ob as the dict read by tessellate_patch
+    ('self' is the object itself).
+    """
     props = ob.tissue_tessellate
     tessellate_dict = {}
     tessellate_dict['self'] = ob

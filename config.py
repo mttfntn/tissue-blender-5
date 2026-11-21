@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Add-on preferences (Numba status, Install Numba, Numba Tessellate) and the buttons
+that open the documentation and the issue tracker.
+"""
+
 import bpy
 from bpy.props import (
     IntProperty,

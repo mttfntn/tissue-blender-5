@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Polyhedral Wireframe: turns a mesh into a frame of polyhedral cells, kept
+parametric with tissue_polyhedra_prop.
+"""
+
 import bpy
 from bpy.types import (
     Operator,

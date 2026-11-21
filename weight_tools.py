@@ -2,6 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Weight tools: create or edit vertex groups (Formula, Area, Curvature, Laplacian,
+Harmonic, Random, Distance, Edges Deformation and Bending), Contour Displace and
+Mask, Streamlines, conversions between vertex groups, colors and UVs, and the
+Weight and Color panels.
+"""
+
 import bpy, bmesh, os
 import numpy as np
 import math, timeit, time
@@ -58,6 +64,9 @@ def _formula_max(*args):
     return result
 
 def compute_formula(ob=None, formula="rx", float_var=(0,0,0,0,0), int_var=(0,0,0,0,0)):
+    """Evaluate a Weight Formula for every vertex of ob. The variables are described in
+    the Formula help (weight_formula_wiki).
+    """
     verts = ob.data.vertices
     n_verts = len(verts)
 
@@ -339,227 +348,6 @@ class update_weight_formula(Operator):
         bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
         return {'FINISHED'}
 
-
-class _weight_laplacian(Operator):
-    bl_idname = "object._weight_laplacian"
-    bl_label = "Weight Laplacian"
-    bl_description = ("Compute the Vertex Group Laplacian")
-    bl_options = {'REGISTER', 'UNDO'}
-
-    bounds : EnumProperty(
-        items=(('MANUAL', "Manual Bounds", ""),
-            ('POSITIVE', "Positive Only", ""),
-            ('NEGATIVE', "Negative Only", ""),
-            ('AUTOMATIC', "Automatic Bounds", "")),
-        default='AUTOMATIC', name="Bounds")
-
-    mode : EnumProperty(
-        items=(('LENGTH', "Length Weight", ""),
-            ('SIMPLE', "Simple", "")),
-        default='SIMPLE', name="Evaluation Mode")
-
-    min_def : FloatProperty(
-        name="Min", default=0, soft_min=-1, soft_max=0,
-        description="Laplacian value with 0 weight")
-
-    max_def : FloatProperty(
-        name="Max", default=0.5, soft_min=0, soft_max=5,
-        description="Laplacian value with 1 weight")
-
-    bounds_string = ""
-
-    frame = None
-
-    @classmethod
-    def poll(cls, context):
-        return len(context.object.vertex_groups) > 0
-
-    def draw(self, context):
-        layout = self.layout
-        col = layout.column(align=True)
-        col.label(text="Evaluation Mode")
-        col.prop(self, "mode", text="")
-        col.label(text="Bounds")
-        col.prop(self, "bounds", text="")
-        if self.bounds == 'MANUAL':
-            col.label(text="Strain Rate \u03B5:")
-            col.prop(self, "min_def")
-            col.prop(self, "max_def")
-        col.label(text="\u03B5" + ": from " + self.bounds_string)
-
-
-    def execute(self, context):
-        try: ob = context.object
-        except:
-            self.report({'ERROR'}, "Please select an Object")
-            return {'CANCELLED'}
-
-        group_id = ob.vertex_groups.active_index
-        input_group = ob.vertex_groups[group_id].name
-
-        group_name = "Laplacian"
-        ob.vertex_groups.new(name=group_name)
-        me = ob.data
-        bm = bmesh.new()
-        bm.from_mesh(me)
-        bm.edges.ensure_lookup_table()
-
-        # store weight values
-        weight = []
-        for v in me.vertices:
-            try:
-                weight.append(ob.vertex_groups[input_group].weight(v.index))
-            except:
-                weight.append(0)
-
-        n_verts = len(bm.verts)
-        lap = [0]*n_verts
-        for e in bm.edges:
-            if self.mode == 'LENGTH':
-                length = e.calc_length()
-                if length == 0: continue
-                id0 = e.verts[0].index
-                id1 = e.verts[1].index
-                lap[id0] += weight[id1]/length - weight[id0]/length
-                lap[id1] += weight[id0]/length - weight[id1]/length
-            else:
-                id0 = e.verts[0].index
-                id1 = e.verts[1].index
-                lap[id0] += weight[id1] - weight[id0]
-                lap[id1] += weight[id0] - weight[id1]
-
-        mean_lap = mean(lap)
-        stdev_lap = stdev(lap)
-        filter_lap = [i for i in lap if mean_lap-2*stdev_lap < i < mean_lap+2*stdev_lap]
-        if self.bounds == 'MANUAL':
-            min_def = self.min_def
-            max_def = self.max_def
-        elif self.bounds == 'AUTOMATIC':
-            min_def = min(filter_lap)
-            max_def = max(filter_lap)
-            self.min_def = min_def
-            self.max_def = max_def
-        elif self.bounds == 'NEGATIVE':
-            min_def = 0
-            max_def = min(filter_lap)
-            self.min_def = min_def
-            self.max_def = max_def
-        elif self.bounds == 'POSITIVE':
-            min_def = 0
-            max_def = max(filter_lap)
-            self.min_def = min_def
-            self.max_def = max_def
-        delta_def = max_def - min_def
-
-        # check undeformed errors
-        if delta_def == 0: delta_def = 0.0001
-
-        for i in range(len(lap)):
-            val = (lap[i]-min_def)/delta_def
-            #if val > 0.7: print(str(val) + " " + str(lap[i]))
-            #val = weight[i] + 0.2*lap[i]
-            ob.vertex_groups[-1].add([i], val, 'REPLACE')
-        self.bounds_string = str(round(min_def,2)) + " to " + str(round(max_def,2))
-        ob.vertex_groups[-1].name = group_name + " " + self.bounds_string
-        ob.vertex_groups.update()
-        ob.data.update()
-        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-        bm.free()
-        return {'FINISHED'}
-
-class ok_weight_laplacian(Operator):
-    bl_idname = "object.weight_laplacian"
-    bl_label = "Weight Laplacian"
-    bl_description = ("Compute the Vertex Group Laplacian")
-    bl_options = {'REGISTER', 'UNDO'}
-
-    bounds_string = ""
-
-    frame = None
-
-    @classmethod
-    def poll(cls, context):
-        return len(context.object.vertex_groups) > 0
-
-
-    def execute(self, context):
-        try: ob = context.object
-        except:
-            self.report({'ERROR'}, "Please select an Object")
-            return {'CANCELLED'}
-
-        me = ob.data
-        bm = bmesh.new()
-        bm.from_mesh(me)
-        bm.edges.ensure_lookup_table()
-
-        group_id = ob.vertex_groups.active_index
-        input_group = ob.vertex_groups[group_id].name
-
-        group_name = "Laplacian"
-        ob.vertex_groups.new(name=group_name)
-
-        # store weight values
-        a = []
-        for v in me.vertices:
-            try:
-                a.append(ob.vertex_groups[input_group].weight(v.index))
-            except:
-                a.append(0)
-
-        a = array(a)
-
-
-        # initialize
-        n_verts = len(bm.verts)
-        # find max number of edges for vertex
-        max_edges = 0
-        n_neighbors = []
-        id_neighbors = []
-        for v in bm.verts:
-            n_edges = len(v.link_edges)
-            max_edges = max(max_edges, n_edges)
-            n_neighbors.append(n_edges)
-            neighbors = []
-            for e in v.link_edges:
-                for v1 in e.verts:
-                    if v != v1: neighbors.append(v1.index)
-            id_neighbors.append(neighbors)
-        n_neighbors = array(n_neighbors)
-
-
-        lap_map = [[] for i in range(n_verts)]
-        #lap_map = []
-        '''
-        for e in bm.edges:
-            id0 = e.verts[0].index
-            id1 = e.verts[1].index
-            lap_map[id0].append(id1)
-            lap_map[id1].append(id0)
-        '''
-        lap = zeros((n_verts))#[0]*n_verts
-        n_records = zeros((n_verts))
-        for e in bm.edges:
-            id0 = e.verts[0].index
-            id1 = e.verts[1].index
-            length = e.calc_length()
-            if length == 0: continue
-            #lap[id0] += abs(a[id1] - a[id0])/length
-            #lap[id1] += abs(a[id0] - a[id1])/length
-            lap[id0] += (a[id1] - a[id0])/length
-            lap[id1] += (a[id0] - a[id1])/length
-            n_records[id0]+=1
-            n_records[id1]+=1
-        lap /= n_records
-        lap /= max(lap)
-
-        for i in range(n_verts):
-            ob.vertex_groups['Laplacian'].add([i], lap[i], 'REPLACE')
-        ob.vertex_groups.update()
-        ob.data.update()
-        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-        bm.free()
-        return {'FINISHED'}
 
 class weight_laplacian(Operator):
     bl_idname = "object.weight_laplacian"
@@ -1424,110 +1212,6 @@ class weight_contour_mask(Operator):
         return {'FINISHED'}
 
 
-class weight_contour_mask_wip(Operator):
-    bl_idname = "object.weight_contour_mask"
-    bl_label = "Contour Mask"
-    bl_description = ("")
-    bl_options = {'REGISTER', 'UNDO'}
-
-    use_modifiers : BoolProperty(
-        name="Use Modifiers", default=True,
-        description="Apply all the modifiers")
-    iso : FloatProperty(
-        name="Iso Value", default=0.5, soft_min=0, soft_max=1,
-        description="Threshold value")
-    bool_solidify : BoolProperty(
-        name="Solidify", default=True, description="Add Solidify Modifier")
-    normalize_weight : BoolProperty(
-        name="Normalize Weight", default=True,
-        description="Normalize weight of remaining vertices")
-
-    @classmethod
-    def poll(cls, context):
-        return len(context.object.vertex_groups) > 0
-
-    def execute(self, context):
-        start_time = timeit.default_timer()
-        try:
-            check = context.object.vertex_groups[0]
-        except:
-            self.report({'ERROR'}, "The object doesn't have Vertex Groups")
-            return {'CANCELLED'}
-
-        ob0 = bpy.context.object
-
-        iso_val = self.iso
-        group_id = ob0.vertex_groups.active_index
-        vertex_group_name = ob0.vertex_groups[group_id].name
-
-        if self.use_modifiers:
-            me0 = simple_to_mesh(ob0)
-        else:
-            me0 = ob0.data.copy()
-
-        # generate new bmesh
-        bm = bmesh.new()
-        bm.from_mesh(me0)
-
-        # store weight values
-        weight = []
-        ob = bpy.data.objects.new("temp", me0)
-        for g in ob0.vertex_groups:
-            ob.vertex_groups.new(name=g.name)
-        weight = get_weight_numpy(ob.vertex_groups[vertex_group_name], len(me0.vertices))
-
-        me0, bm, weight = contour_bmesh(me0, bm, weight, iso_val)
-
-        # Mask geometry
-        mask = weight >= iso_val
-        weight = weight[mask]
-        mask = np.logical_not(mask)
-        delete_verts = np.array(bm.verts)[mask]
-
-        # Create mesh and object
-        name = ob0.name + '_ContourMask_{:.3f}'.format(iso_val)
-        me = bpy.data.meshes.new(name)
-        bm.to_mesh(me)
-        bm.free()
-        ob = bpy.data.objects.new(name, me)
-
-        # Link object to scene and make active
-        scn = context.scene
-        context.collection.objects.link(ob)
-        context.view_layer.objects.active = ob
-        ob.select_set(True)
-        ob0.select_set(False)
-
-        # generate new vertex group
-        for g in ob0.vertex_groups:
-            ob.vertex_groups.new(name=g.name)
-
-        if iso_val != 1: mult = 1/(1-iso_val)
-        else: mult = 1
-        for id in range(len(weight)):
-            if self.normalize_weight: w = (weight[id]-iso_val)*mult
-            else: w = weight[id]
-            ob.vertex_groups[vertex_group_name].add([id], w, 'REPLACE')
-        ob.vertex_groups.active_index = group_id
-
-        # align new object
-        ob.matrix_world = ob0.matrix_world
-
-        # Add Solidify
-        if self.bool_solidify and True:
-            ob.modifiers.new(type='SOLIDIFY', name='Solidify')
-            ob.modifiers['Solidify'].thickness = 0.05
-            ob.modifiers['Solidify'].offset = 0
-            ob.modifiers['Solidify'].vertex_group = vertex_group_name
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.mode_set(mode='WEIGHT_PAINT')
-        print("Contour Mask time: " + str(timeit.default_timer() - start_time) + " sec")
-
-        bpy.data.meshes.remove(me0)
-
-        return {'FINISHED'}
-
 class vertex_colors_to_vertex_groups(Operator):
     bl_idname = "object.vertex_colors_to_vertex_groups"
     bl_label = "Vertex Color"
@@ -2330,8 +2014,6 @@ def contour_bmesh(me, bm, weight, iso_val):
     weight = np.concatenate((weight, np.ones(len(verts))*iso_val))
 
     return me, bm, weight
-
-
 
 
 class tissue_weight_streamlines(Operator):

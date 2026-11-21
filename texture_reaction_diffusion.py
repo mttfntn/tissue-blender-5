@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Texture Reaction-Diffusion: a Gray-Scott simulation on two images (A and B) instead
+of vertex groups. Uses Numba when available, otherwise np_run_tex_rd_ani.
+"""
+
 import bpy, bmesh, os
 import numpy as np
 import math, timeit, time
@@ -256,6 +260,7 @@ def tex_rd_scene(scene, bake=False):
             tex_reaction_diffusion_def(ob)
 
 def tex_reaction_diffusion_def(ob, bake=False):
+    """Run one frame of the texture Reaction-Diffusion on ob's A and B images."""
     try:
         props = ob.tex_reaction_diffusion_settings
     except:
@@ -615,28 +620,6 @@ class TISSUE_PT_tex_reaction_diffusion(Panel):
             col1 = row.column(align=True)
             col1.prop(props, "k")
             col1.enabled = props.img_k == '' and not props.bool_cache
-            '''
-            col.separator()
-            col.label(text='Cache:')
-            #col.prop(props, "bool_cache")
-            col.prop(props, "cache_dir", text='')
-            col.separator()
-            row = col.row(align=True)
-            row.prop(props, "cache_frame_start")
-            row.prop(props, "cache_frame_end")
-            col.separator()
-            if props.bool_cache:
-                col.operator("object.reaction_diffusion_free_data")
-            else:
-                row = col.row(align=True)
-                row.operator("object.bake_reaction_diffusion")
-                file = bpy.context.blend_data.filepath
-                temp = bpy.context.preferences.filepaths.temporary_directory
-                if file == temp == props.cache_dir == '':
-                    row.enabled = False
-                    col.label(text="Cannot use cache", icon='ERROR')
-                    col.label(text='please save the Blender or set a Cache directory')
-            '''
 
 class TISSUE_PT_tex_reaction_diffusion_images(Panel):
     bl_space_type = 'PROPERTIES'

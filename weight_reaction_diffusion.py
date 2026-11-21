@@ -2,6 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Reaction-Diffusion on vertex groups (Gray-Scott, groups A and B): the step run at
+each frame (reaction_diffusion_def), its frame handler, the bake cache, settings
+and panels. Uses Numba when available, otherwise NumPy.
+"""
+
 import bpy, bmesh, os
 import numpy as np
 import math, timeit, time
@@ -505,6 +510,9 @@ def store_attribute_parameter(mesh, name, values, domain, data_type):
         att.data.foreach_set('value', values)
 
 def reaction_diffusion_def(ob, bake=False):
+    """Run one frame of the Reaction-Diffusion on ob, reading and writing the A and B
+    vertex groups, or the bake cache.
+    """
     scene = bpy.context.scene
     start = time.time()
     beginning = time.time()

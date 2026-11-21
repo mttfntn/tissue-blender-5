@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Random Materials and Weight to Materials: set the material of each face randomly
+or from a vertex group.
+"""
+
 import bpy
 import numpy as np
 

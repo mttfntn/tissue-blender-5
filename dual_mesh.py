@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Dual Mesh: replaces every vertex of a mesh with a face, and the variant used on
+tessellated objects.
+"""
+
 import bpy
 from bpy.types import Operator
 from bpy.props import (

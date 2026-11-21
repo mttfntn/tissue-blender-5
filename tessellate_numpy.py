@@ -2,6 +2,19 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Tessellate, the main Tissue tool: copies a Component onto every face of a Base
+(the generator).
+
+- tessellate_patch: the algorithm, one iteration
+- tissue_tessellate: the operator that creates a tessellation
+- tissue_update_tessellate: refreshes it from the settings stored on the object
+  (tissue_properties.tissue_tessellate_prop), runs the iterations and merging
+- convert_to_fan / convert_to_frame / convert_to_triangles / reduce_to_quads:
+  prepare the Base for each Fill Mode
+- merge_components: Merge, Bridge and Cap
+- rotate face tools, Render Animation and every Tessellate panel
+"""
+
 import bpy
 from bpy.types import (
         Operator,
@@ -53,6 +66,18 @@ def tessellated(ob):
     return False
 
 def tessellate_patch(props):
+    """One Tessellate iteration. props is the dict made by tissue_properties.props_to_dict.
+
+    The stages are marked with ### in the code: prepare the Base for the Fill Mode,
+    collect the patches (utils.get_patches for Patch, utils.get_quads otherwise),
+    weight, smooth normals and rotation of the patches, then for each Component: map
+    its normalized coordinates onto every patch (np_lerp2) and offset them along the
+    normals (calc_thickness), with shape keys, vertex groups and materials.
+
+    Returns a list of new temporary objects, or an error code string
+    ("modifiers_error", "patch_faces_error") that tissue_update_tessellate turns
+    into a message.
+    """
     tt = time.time()
 
     ob = props['self']
@@ -599,8 +624,8 @@ def tessellate_patch(props):
                 bool_shapekeys = False
         else: bool_shapekeys = False
 
+        mod_visibility = []     # modifiers hidden below, restored after the conversion
         if not com_modifiers and not bool_shapekeys:
-            mod_visibility = []
             for m in _ob1.modifiers:
                 mod_visibility.append(m.show_viewport)
                 m.show_viewport = False
@@ -974,10 +999,12 @@ def tessellate_patch(props):
         store_coordinates = np.concatenate(store_coordinates, axis=0).reshape((-1)).tolist()
         new_me.vertices.foreach_set('co',store_coordinates)
 
+        # show the new object in every 3D Viewport that is in Local View
         for area in bpy.context.screen.areas:
             for space in area.spaces:
+                if space.type != 'VIEW_3D': continue
                 try: new_patch.local_view_set(space, True)
-                except: pass
+                except: pass    # this viewport is not in Local View
         tt = tissue_time(tt, "Inject coordinates", levels=2)
 
 
@@ -1771,6 +1798,8 @@ class tissue_tessellate(Operator):
         col.label(text="More settings in the Object Data Properties panel...", icon='PROPERTIES')
 
 
+    # Creates the tessellated object (or reuses the active one), stores the operator's
+    # settings on it with store_parameters, then lets tissue_update_tessellate build it.
     def execute(self, context):
         try:
             ob0 = bpy.data.objects[self.generator]
@@ -1926,6 +1955,11 @@ class tissue_update_tessellate(Operator):
         except:
             return False
 
+    # Rebuilds the active tessellated object from the settings stored on it:
+    # reads the settings, checks Base and Component, runs tessellate_patch once per
+    # iteration (each iteration's result is the Base of the next), combines and
+    # merges the results, then swaps the new mesh into the object, keeping its name.
+    # Errors are reported, and the visibility of Base and Component is restored.
     def execute(self, context):
         ob = context.object
         tissue_time(None,'Tissue: Tessellate of "{}"...'.format(ob.name), levels=0)
@@ -2026,22 +2060,6 @@ class tissue_update_tessellate(Operator):
         ob.tissue_tessellate.warning_message_merge = ''
 
         props = props_to_dict(ob)
-
-        # Solve Local View issues
-        local_spaces = []
-        local_ob0 = []
-        local_ob1 = []
-        for area in context.screen.areas:
-            for space in area.spaces:
-                try:
-                    if ob.local_view_get(space):
-                        local_spaces.append(space)
-                        local_ob0 = ob0.local_view_get(space)
-                        ob0.local_view_set(space, True)
-                        local_ob1 = ob1.local_view_get(space)
-                        ob1.local_view_set(space, True)
-                except:
-                    pass
 
         starting_mode = context.object.mode
 
@@ -2339,12 +2357,6 @@ class tissue_update_tessellate(Operator):
         ob.data.name = data_name
         bpy.data.meshes.remove(old_data)
 
-        '''
-        # copy vertex group
-        for vg in new_ob.vertex_groups:
-            if not vg.name in ob.vertex_groups.keys():
-                ob.vertex_groups.new(name=vg.name)
-        '''
 
         selected_objects = [o for o in context.selected_objects]
         for o in selected_objects: o.select_set(False)
@@ -2377,10 +2389,6 @@ class tissue_update_tessellate(Operator):
             ob1.hide_set(ob1_hide)
             ob1.hide_viewport = ob1_hidev
             ob1.hide_render = ob1_hider
-        # Restore Local visibility
-        for space, local0, local1 in zip(local_spaces, local_ob0, local_ob1):
-            ob0.local_view_set(space, local0)
-            ob1.local_view_set(space, local1)
 
         bpy.data.objects.remove(new_ob)
 
@@ -2969,12 +2977,6 @@ class TISSUE_PT_tessellate_options(Panel):
                     row2 = col2.row(align=True)
                 col.prop(props, "bridge_edges_crease", text="Crease")
                 col.prop(props, "bridge_material_offset", text='Material Offset')
-                '''
-                if props.close_mesh == 'BRIDGE' and False:
-                    col.separator()
-                    col.prop(props, "bridge_cuts")
-                    col.prop(props, "bridge_smoothness")
-                '''
             if props.close_mesh in ('CAP', 'BRIDGE_CAP'):
                 #row = col.row(align=True)
                 col.separator()
@@ -3333,6 +3335,9 @@ class tissue_rotate_face_left(Operator):
         return {'FINISHED'}
 
 def convert_to_frame(ob, props, use_modifiers=True):
+    """Frame fill: a temporary copy of the Base where every face becomes a frame of quads
+    along its edges.
+    """
     new_ob = convert_object_to_mesh(ob, use_modifiers, True,props['rotation_mode']!='UV')
 
     # create bmesh
@@ -3664,6 +3669,9 @@ def reduce_to_quads(ob, props):
     return new_ob
 
 def convert_to_fan(ob, props, add_id_layer=False):
+    """Fan fill: a temporary copy of the Base with every face split into triangles
+    around its centre.
+    """
     new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True, props['rotation_mode']!='UV')
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
@@ -3683,6 +3691,7 @@ def convert_to_fan(ob, props, add_id_layer=False):
     return new_ob
 
 def convert_to_triangles(ob, props):
+    """Tri fill: a temporary copy of the Base with every face triangulated."""
     new_ob = convert_object_to_mesh(ob, props['gen_modifiers'], True, props['rotation_mode']!='UV')
     bm = bmesh.new()
     bm.from_mesh(new_ob.data)
@@ -3701,185 +3710,83 @@ def convert_to_triangles(ob, props):
 
 def merge_components(ob, props, use_bmesh):
 
-    if not use_bmesh and False:
-        skip = True
-        ob.active_shape_key_index = 1
-        if ob.data.shape_keys != None:
-            for sk in ob.data.shape_keys.key_blocks:
-                if skip:
-                    skip = False
-                    continue
-                sk.mute = True
-        ob.data.update()
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        if ob.data.shape_keys != None:
-            for sk in ob.data.shape_keys.key_blocks:
-                sk.mute = False
-        ob.data.update()
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_mode(
-            use_extend=False, use_expand=False, type='VERT')
-        bpy.ops.mesh.select_non_manifold(
-            extend=False, use_wire=True, use_boundary=True,
-            use_multi_face=False, use_non_contiguous=False, use_verts=False)
-
-        bpy.ops.mesh.remove_doubles(
-            threshold=props.merge_thres, use_unselected=False)
-
-        if props.bool_dissolve_seams:
-            bpy.ops.mesh.select_mode(type='EDGE')
-            bpy.ops.mesh.select_all(action='DESELECT')
-            bpy.ops.object.mode_set(mode='OBJECT')
-            for e in new_ob.data.edges:
-                e.select = e.use_seam
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.dissolve_edges()
-        bpy.ops.object.mode_set(mode='OBJECT')
-
-        if props.close_mesh != 'NONE':
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_mode(
-                use_extend=False, use_expand=False, type='EDGE')
-            bpy.ops.mesh.select_non_manifold(
-                extend=False, use_wire=False, use_boundary=True,
-                use_multi_face=False, use_non_contiguous=False, use_verts=False)
-            if props.close_mesh == 'CAP':
-                if props.open_edges_crease != 0:
-                    bpy.ops.transform.edge_crease(value=props.open_edges_crease)
-                bpy.ops.mesh.edge_face_add()
-                bpy.ops.object.mode_set(mode='OBJECT')
-                for f in ob.data.polygons:
-                    if f.select: f.material_index += props.cap_material_offset
-            elif props.close_mesh == 'BRIDGE':
-                try:
-                    if props.bridge_edges_crease != 0:
-                        bpy.ops.transform.edge_crease(value=props.bridge_edges_crease)
-                    bpy.ops.mesh.bridge_edge_loops(
-                        type='PAIRS',
-                        number_cuts=props.bridge_cuts,
-                        interpolation='SURFACE',
-                        smoothness=props.bridge_smoothness)
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    for f in ob.data.polygons:
-                        if f.select: f.material_index += props.bridge_material_offset
-                except: pass
-            elif props.close_mesh == 'BRIDGE_CAP':
-                # BRIDGE
-                try:
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    vg = ob.vertex_groups[props.vertex_group_bridge]
-                    weight = get_weight_numpy(vg, len(ob.data.vertices))
-                    for e in ob.data.edges:
-                        if weight[e.vertices[0]]*weight[e.vertices[1]] < 1:
-                            e.select = False
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    if props.bridge_edges_crease != 0:
-                        bpy.ops.transform.edge_crease(value=props.bridge_edges_crease)
-                    bpy.ops.mesh.bridge_edge_loops(
-                        type='PAIRS',
-                        number_cuts=props.bridge_cuts,
-                        interpolation='SURFACE',
-                        smoothness=props.bridge_smoothness)
-                    for f in ob.data.polygons:
-                        if f.select: f.material_index += props.bridge_material_offset
-                    bpy.ops.mesh.select_all(action='DESELECT')
-                    bpy.ops.mesh.select_non_manifold(
-                        extend=False, use_wire=False, use_boundary=True,
-                        use_multi_face=False, use_non_contiguous=False, use_verts=False)
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                except: pass
-                # CAP
-                try:
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    vg = ob.vertex_groups[props.vertex_group_cap]
-                    weight = get_weight_numpy(vg, len(ob.data.vertices))
-                    for e in ob.data.edges:
-                        if weight[e.vertices[0]]*weight[e.vertices[1]] < 1:
-                            e.select = False
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    if props.open_edges_crease != 0:
-                        bpy.ops.transform.edge_crease(value=props.open_edges_crease)
-                    bpy.ops.mesh.edge_face_add()
-                    for f in ob.data.polygons:
-                        if f.select: f.material_index += props.cap_material_offset
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                except: pass
+    """Merge the vertices of the joined components, then close the open boundaries
+    (Bridge, Cap or both) setting creases and material offsets. use_bmesh is no longer
+    used. Returns 'bridge_error' when the bridge can't be made.
+    """
+    if(props.bridge_edges_crease>0 or props.open_edges_crease>0):
+        ob.data.edge_creases_ensure()
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)   # reading doesn't change the mesh: no copy needed
+    if props.merge_open_edges_only:
+        boundary_verts = [v for v in bm.verts if v.is_boundary or v.is_wire]
     else:
-        if(props.bridge_edges_crease>0 or props.open_edges_crease>0):
-            ob.data.edge_creases_ensure()
-        bm = bmesh.new()
-        bm.from_mesh(ob.data.copy())
-        if props.merge_open_edges_only:
-            boundary_verts = [v for v in bm.verts if v.is_boundary or v.is_wire]
-        else:
-            boundary_verts = bm.verts
-        bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=props.merge_thres)
+        boundary_verts = bm.verts
+    bmesh.ops.remove_doubles(bm, verts=boundary_verts, dist=props.merge_thres)
 
-        if props.bool_dissolve_seams:
-            seam_edges = [e for e in bm.edges if e.seam]
-            bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
-        if props.close_mesh != 'NONE':
-            bm.edges.ensure_lookup_table()
-            # set crease
-            # edge_creases_ensure() may have created the layer already: a second
-            # one would be named 'crease_edge.001', which Blender ignores
-            crease_layer = bm.edges.layers.float.get('crease_edge') or bm.edges.layers.float.new('crease_edge')
-            boundary_edges = [e for e in bm.edges if e.is_boundary or e.is_wire]
-            n_materials = len(ob.material_slots)-1
-            if props.close_mesh == 'BRIDGE':
-                try:
-                    for e in boundary_edges:
-                        e[crease_layer] = props.bridge_edges_crease
-                    closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
-                    if n_materials >= 0:
-                        for f in closed['faces']:
-                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
-                except:
-                    bm.to_mesh(ob.data)
-                    return 'bridge_error'
-            elif props.close_mesh == 'CAP':
+    if props.bool_dissolve_seams:
+        seam_edges = [e for e in bm.edges if e.seam]
+        bmesh.ops.dissolve_edges(bm, edges=seam_edges, use_verts=True, use_face_split=False)
+    if props.close_mesh != 'NONE':
+        bm.edges.ensure_lookup_table()
+        # set crease
+        # edge_creases_ensure() may have created the layer already: a second
+        # one would be named 'crease_edge.001', which Blender ignores
+        crease_layer = bm.edges.layers.float.get('crease_edge') or bm.edges.layers.float.new('crease_edge')
+        boundary_edges = [e for e in bm.edges if e.is_boundary or e.is_wire]
+        n_materials = len(ob.material_slots)-1
+        if props.close_mesh == 'BRIDGE':
+            try:
                 for e in boundary_edges:
-                    e[crease_layer] = props.open_edges_crease
-                closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
+                    e[crease_layer] = props.bridge_edges_crease
+                closed = bmesh.ops.bridge_loops(bm, edges=boundary_edges, use_pairs=True)
                 if n_materials >= 0:
                     for f in closed['faces']:
-                        f.material_index = min(f.material_index + props.cap_material_offset, n_materials)
-            elif props.close_mesh == 'BRIDGE_CAP':
-                # BRIDGE
+                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
+            except:
+                bm.to_mesh(ob.data)
+                return 'bridge_error'
+        elif props.close_mesh == 'CAP':
+            for e in boundary_edges:
+                e[crease_layer] = props.open_edges_crease
+            closed = bmesh.ops.holes_fill(bm, edges=boundary_edges)
+            if n_materials >= 0:
+                for f in closed['faces']:
+                    f.material_index = min(f.material_index + props.cap_material_offset, n_materials)
+        elif props.close_mesh == 'BRIDGE_CAP':
+            # BRIDGE
+            dvert_lay = bm.verts.layers.deform.active
+            try:
                 dvert_lay = bm.verts.layers.deform.active
-                try:
-                    dvert_lay = bm.verts.layers.deform.active
-                    group_index = ob.vertex_groups[props.vertex_group_bridge].index
-                    bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-                    if props.invert_vertex_group_bridge: bw = 1-bw
-                    bridge_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
-                    for e in bridge_edges:
-                        e[crease_layer] = props.bridge_edges_crease
-                    closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
-                    if n_materials >= 0:
-                        for f in closed['faces']:
-                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
-                    boundary_edges = [e for e in bm.edges if e.is_boundary]
-                except: pass
-                # CAP
-                try:
-                    dvert_lay = bm.verts.layers.deform.active
-                    group_index = ob.vertex_groups[props.vertex_group_cap].index
-                    bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
-                    if props.invert_vertex_group_cap: bw = 1-bw
-                    cap_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
-                    for e in cap_edges:
-                        e[crease_layer] = props.open_edges_crease
-                    closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
-                    if n_materials >= 0:
-                        for f in closed['faces']:
-                            f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
-                except: pass
-        bm.to_mesh(ob.data)
-        bm.free()
-        ob.data.update()  # Blender 5.0: ensure normals are recalculated after merge
+                group_index = ob.vertex_groups[props.vertex_group_bridge].index
+                bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                if props.invert_vertex_group_bridge: bw = 1-bw
+                bridge_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
+                for e in bridge_edges:
+                    e[crease_layer] = props.bridge_edges_crease
+                closed = bmesh.ops.bridge_loops(bm, edges=bridge_edges, use_pairs=True)
+                if n_materials >= 0:
+                    for f in closed['faces']:
+                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
+                boundary_edges = [e for e in bm.edges if e.is_boundary]
+            except: pass
+            # CAP
+            try:
+                dvert_lay = bm.verts.layers.deform.active
+                group_index = ob.vertex_groups[props.vertex_group_cap].index
+                bw = bmesh_get_weight_numpy(group_index, dvert_lay, bm.verts)
+                if props.invert_vertex_group_cap: bw = 1-bw
+                cap_edges = [e for e in boundary_edges if bw[e.verts[0].index]*bw[e.verts[1].index] >= 1]
+                for e in cap_edges:
+                    e[crease_layer] = props.open_edges_crease
+                closed = bmesh.ops.holes_fill(bm, edges=cap_edges)
+                if n_materials >= 0:
+                    for f in closed['faces']:
+                        f.material_index = min(f.material_index + props.bridge_material_offset, n_materials)
+            except: pass
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()  # Blender 5.0: ensure normals are recalculated after merge
 
 class tissue_render_animation(Operator):
     bl_idname = "render.tissue_render_animation"

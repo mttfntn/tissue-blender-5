@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""UV to Mesh: a flat mesh made from an object's UV layout."""
+
 import bpy, bmesh
 import math
 from bpy.types import Operator

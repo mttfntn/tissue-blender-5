@@ -794,6 +794,42 @@ def texture_reaction_diffusion_numpy_matches_numba():
           "the NumPy simulation gives a different result")
 
 
+# --- Add-on lifecycle (last: it disables and enables Tissue) ---------------------
+
+
+OBJECT_PROPERTIES = (
+    "tissue", "tissue_tessellate", "tissue_polyhedra", "tissue_to_curve",
+    "tissue_contour_curves", "formula_settings", "reaction_diffusion_settings",
+    "tex_reaction_diffusion_settings",
+)
+
+
+def tissue_handlers():
+    handlers = list(bpy.app.handlers.frame_change_post) + list(bpy.app.handlers.render_init)
+    return [h.__name__ for h in handlers if getattr(h, "__module__", "").split(".")[0] == "tissue"]
+
+
+@test
+def disable_and_enable():
+    # Ported from upstream's b5-dev branch. Animated Tessellate and Reaction-Diffusion
+    # add frame handlers while they are used: disabling has to remove them too.
+    base, component, out = tessellate('QUAD')
+    out.tissue.bool_run = True
+    reaction_diffusion_object()
+    bpy.context.scene.frame_set(bpy.context.scene.frame_current + 1)
+    check(tissue_handlers(), "the test didn't add any handler to remove")
+    addon_utils.disable("tissue", default_set=True, handle_error=None)
+    left = [p for p in OBJECT_PROPERTIES if hasattr(bpy.types.Object, p)]
+    check(not left, f"disabling left these object properties: {left}")
+    check(not tissue_handlers(), f"disabling left these handlers: {tissue_handlers()}")
+    bpy.context.scene.frame_set(bpy.context.scene.frame_current + 1)
+    addon_utils.enable("tissue", default_set=True, handle_error=None)
+    check(not tissue_handlers(), f"enabling added handlers: {tissue_handlers()}")
+    # The tools still work after re-enabling.
+    reset_scene()
+    tessellate('QUAD')
+
+
 # --- Runner -------------------------------------------------------------------
 
 

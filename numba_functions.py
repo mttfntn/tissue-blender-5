@@ -2,6 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Numba versions of the slowest loops (Tessellate interpolation and thickness,
+Reaction-Diffusion). They exist only when Numba can be imported (bool_numba):
+the callers check for them and fall back to NumPy otherwise.
+"""
+
 import numpy as np
 import time
 import sys
@@ -16,18 +21,6 @@ try:
     bool_numba = True
 except:
     pass
-    '''
-    try:
-        from .utils_pip import Pip
-        #Pip.upgrade_pip()
-        Pip.install('llvmlite')
-        Pip.install('numba')
-        from numba import jit, njit, guvectorize, float64, int32, prange
-        bool_numba = True
-        print('Tissue: Numba successfully installed!')
-    except:
-        print('Tissue: Numba not loaded correctly. Try restarting Blender')
-    '''
 
 if bool_numba:
     #from numba import jit, njit, guvectorize, float64, int32, prange
@@ -168,11 +161,6 @@ if bool_numba:
             a[i] += (diff_ai * lap_a[i] - ab2 + fi*(1-a[i]))*dt
             b[i] += (diff_bi * lap_b[i] + ab2 - (ki+fi)*b[i])*dt
 
-    @njit(parallel=True)
-    def numba_rd_core_(a, b, lap_a, lap_b, diff_a, diff_b, f, k, dt):
-        ab2 = a*b**2
-        a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-        b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
 
     @njit(parallel=True)
     def numba_set_ab(a, b, brush):
@@ -208,41 +196,9 @@ if bool_numba:
             lap_b[v1] += (b[v0] - b[v1]) * multiplier
         #return lap_a, lap_b
 
-    @njit(parallel=True)
-    def numba_rd_neigh_vertices(edge_verts):
-        n_edges = len(edge_verts)/2
-        id0 = np.zeros(n_edges)
-        id1 = np.zeros(n_edges)
-        for i in prange(n_edges):
-            id0[i] = edge_verts[i*2]     # first vertex indices for each edge
-            id1[i] = edge_verts[i*2+1]   # second vertex indices for each edge
-        return id0, id1
 
-    #@guvectorize(['(float64[:] ,float64[:] , float64[:], float64[:], float64[:])'],'(m),(n),(n),(n),(n)',target='parallel')
-    @njit(parallel=True)
-    #@njit
-    def numba_rd_laplacian_(edge_verts, a, b, lap_a, lap_b):
-        for i in prange(len(edge_verts)/2):
-            v0 = edge_verts[i*2]
-            v1 = edge_verts[i*2+1]
-            lap_a[v0] += a[v1] - a[v0]
-            lap_a[v1] += a[v0] - a[v1]
-            lap_b[v0] += b[v1] - b[v0]
-            lap_b[v1] += b[v0] - b[v1]
         #return lap_a, lap_b
 
-    @njit(parallel=True)
-    def rd_fill_laplacian(lap_a, lap_b, id0, id1, lap_a0, lap_b0):
-        #for i, j, la0, lb0 in zip(id0,id1,lap_a0,lap_b0):
-        for index in prange(len(id0)):
-            i = id0[index]
-            j = id1[index]
-            la0 = lap_a0[index]
-            lb0 = lap_b0[index]
-            lap_a[i] += la0
-            lap_b[i] += lb0
-            lap_a[j] -= la0
-            lap_b[j] -= lb0
 
     @njit(parallel=True)
     def rd_init_laplacian(n_verts):
@@ -250,82 +206,6 @@ if bool_numba:
         lap_b = np.zeros(n_verts)
         return lap_a, lap_b
 
-    '''
-    @jit
-    def numba_reaction_diffusion(n_verts, n_edges, edge_verts, a, b, diff_a, diff_b, f, k, dt, time_steps, db):
-        arr = np.arange(n_edges)*2
-        id0 = edge_verts[arr]     # first vertex indices for each edge
-        id1 = edge_verts[arr+1]   # second vertex indices for each edge
-        #dgrad = abs(grad[id1] - grad[id0])
-        for i in range(time_steps):
-            lap_a = np.zeros(n_verts)
-            lap_b = np.zeros(n_verts)
-            b += db
-            lap_a0 =  a[id1] - a[id0]   # laplacian increment for first vertex of each edge
-            lap_b0 =  b[id1] -  b[id0]   # laplacian increment for first vertex of each edge
-            #lap_a0 *= dgrad
-            #lap_b0 *= dgrad
-
-            for i, j, la0, lb0 in zip(id0,id1,lap_a0,lap_b0):
-                lap_a[i] += la0
-                lap_b[i] += lb0
-                lap_a[j] -= la0
-                lap_b[j] -= lb0
-            ab2 = a*b**2
-            #a += eval("(diff_a*lap_a - ab2 + f*(1-a))*dt")
-            #b += eval("(diff_b*lap_b + ab2 - (k+f)*b)*dt")
-            a += (diff_a*lap_a - ab2 + f*(1-a))*dt
-            b += (diff_b*lap_b + ab2 - (k+f)*b)*dt
-        return a, b
-    '''
-    '''
-    @njit(parallel=True)
-    def numba_lerp2_(v00, v10, v01, v11, vx, vy):
-        sh = v00.shape
-        co2 = np.zeros((sh[0],len(vx),sh[-1]))
-        for i in prange(len(v00)):
-            for j in prange(len(vx)):
-                for k in prange(len(v00[0][0])):
-                    co0 = v00[i][0][k] + (v10[i][0][k] - v00[i][0][k]) * vx[j][0]
-                    co1 = v01[i][0][k] + (v11[i][0][k] - v01[i][0][k]) * vx[j][0]
-                    co2[i][j][k] = co0 + (co1 - co0) * vy[j][0]
-        return co2
-
-
-    @njit(parallel=True)
-    def numba_lerp2_vec(v0, vx, vy):
-        n_faces = v0.shape[0]
-        co2 = np.zeros((n_faces,len(vx),3))
-        for i in prange(n_faces):
-            for j in prange(len(vx)):
-                for k in prange(3):
-                    co0 = v0[i][0][k] + (v0[i][1][k] - v0[i][0][k]) * vx[j][0]
-                    co1 = v0[i][3][k] + (v0[i][2][k] - v0[i][3][k]) * vx[j][0]
-                    co2[i][j][k] = co0 + (co1 - co0) * vy[j][0]
-        return co2
-
-    @njit(parallel=True)
-    def numba_lerp2__(val, vx, vy):
-        n_faces = len(val)
-        co2 = np.zeros((n_faces,len(vx),1))
-        for i in prange(n_faces):
-            for j in prange(len(vx)):
-                co0 = val[i][0] + (val[i][1] - val[i][0]) * val[j][0]
-                co1 = val[i][3] + (val[i][2] - val[i][3]) * val[j][0]
-                co2[i][j][0] = co0 + (co1 - co0) * vy[j][0]
-        return co2
-    '''
-
-    @njit(parallel=True)
-    def numba_combine_and_flatten(arrays):
-        n_faces = len(arrays)
-        n_verts = len(arrays[0])
-        new_list = [0.0]*n_faces*n_verts*3
-        for i in prange(n_faces):
-            for j in prange(n_verts):
-                for k in prange(3):
-                    new_list[i*n_verts*3+j*3+k] = arrays[i][j,k]
-        return new_list
 
     @njit(parallel=True)
     def numba_calc_thickness_area_weight(co2,n2,vz,a,weight):
@@ -342,50 +222,7 @@ if bool_numba:
                 for k in prange(n_co):
                     co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0] * a[i,min(j,na),0] * weight[i,min(j,nw),0]
         return co3
-    '''
-    @njit(parallel=True)
-    def numba_calc_thickness_area(co2,n2,vz,a):
-        shape = co2.shape
-        n_patches = shape[0]
-        n_verts = shape[1]
-        n_co = shape[2]
-        #co3 = [0.0]*n_patches*n_verts*n_co #np.zeros((n_patches,n_verts,n_co))
-        co3 = np.zeros((n_patches,n_verts,n_co))
-        for i in prange(n_patches):
-            for j in prange(n_verts):
-                for k in prange(n_co):
-                    #co3[i,j,k] = co2[i,j,k] + n2[i,j,k] * vz[0,j,0] * a[i,j,0]
-                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nor_len),k] * vz[0,j,0] * a[i,j,0]
-        return co3
-    '''
-    @njit(parallel=True)
-    def numba_calc_thickness_weight(co2,n2,vz,weight):
-        shape = co2.shape
-        n_patches = shape[0]
-        n_verts = shape[1]
-        n_co = shape[2]
-        nn = n2.shape[1]-1
-        nw = weight.shape[1]-1
-        co3 = np.zeros((n_patches,n_verts,n_co))
-        for i in prange(n_patches):
-            for j in prange(n_verts):
-                for k in prange(n_co):
-                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0] * weight[i,min(j,nw),0]
-        return co3
 
-    @njit(parallel=True)
-    def numba_calc_thickness(co2,n2,vz):
-        shape = co2.shape
-        n_patches = shape[0]
-        n_verts = shape[1]
-        n_co = shape[2]
-        nn = n2.shape[1]-1
-        co3 = np.zeros((n_patches,n_verts,n_co))
-        for i in prange(n_patches):
-            for j in prange(n_verts):
-                for k in prange(n_co):
-                    co3[i,j,k] = co2[i,j,k] + n2[i,min(j,nn),k] * vz[0,j,0]
-        return co3
 
     @njit(parallel=True)
     def numba_interp_points(v00, v10, v01, v11, vx, vy):
@@ -428,44 +265,6 @@ if bool_numba:
         co0 = numba_lerp(v00, v10, vx)
         co1 = numba_lerp(v01, v11, vx)
         co2 = numba_lerp(co0, co1, vy)
-        return co2
-
-    @njit(parallel=True)
-    def numba_lerp2_________________(v00, v10, v01, v11, vx, vy):
-        ni = len(v00)
-        nj = len(v00[0])
-        nk = len(v00[0][0])
-        co2 = np.zeros((ni,nj,nk))
-        for i in prange(ni):
-            for j in prange(nj):
-                for k in prange(nk):
-                    _v00 = v00[i,j,k]
-                    _v01 = v01[i,j,k]
-                    _v10 = v10[i,j,k]
-                    _v11 = v11[i,j,k]
-                    co0 = _v00 + (_v10 - _v00) * vx[i,j,k]
-                    co1 = _v01 + (_v11 - _v01) * vx[i,j,k]
-                    co2[i,j,k] = co0 + (co1 - co0) * vy[i,j,k]
-        return co2
-
-    @njit(parallel=True)
-    def numba_lerp2_4(v00, v10, v01, v11, vx, vy):
-        ni = len(v00)
-        nj = len(v00[0])
-        nk = len(v00[0][0])
-        nw = len(v00[0][0][0])
-        co2 = np.zeros((ni,nj,nk,nw))
-        for i in prange(ni):
-            for j in prange(nj):
-                for k in prange(nk):
-                    for w in prange(nw):
-                        _v00 = v00[i,j,k]
-                        _v01 = v01[i,j,k]
-                        _v10 = v10[i,j,k]
-                        _v11 = v11[i,j,k]
-                        co0 = _v00 + (_v10 - _v00) * vx[i,j,k]
-                        co1 = _v01 + (_v11 - _v01) * vx[i,j,k]
-                        co2[i,j,k] = co0 + (co1 - co0) * vy[i,j,k]
         return co2
 
 

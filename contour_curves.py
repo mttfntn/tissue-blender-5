@@ -2,6 +2,11 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Contour Curves: curves along the level lines of a vertex group, an attribute, the
+distance from seeds or an object, or a vector field. The result is a parametric
+object (tissue_contour_curves_prop) that can be refreshed.
+"""
+
 import bpy, bmesh, os
 import numpy as np
 import math, timeit, time
@@ -846,22 +851,7 @@ class tissue_update_contour_curves(Operator):
         if props.contour_mode == 'TOPOLOGY':
             weight = weight/np.max(weight)
 
-        if False:
-            edges_verts = get_attribute_numpy(me0.edges,"vertices",mult=2).astype('int')
-            edges_vec = vertices[edges_verts[:,0]]-vertices[edges_verts[:,1]]
-            #edges_vec = global_verts[edges_verts[:,0]]-global_verts[edges_verts[:,1]]
-            edges_length = np.linalg.norm(edges_vec,axis=1)
-            edges_vec /= edges_length[:,np.newaxis]
-            edges_dw = np.abs(weight[edges_verts[:,0]]-weight[edges_verts[:,1]])
-            edges_bevel = delta_iso*edges_length/edges_dw/2*0 + 1
 
-        '''
-        # numpy method
-        faces_n_verts = get_attribute_numpy(me0.polygons, attribute='loop_total').astype('int')
-        faces_verts = get_attribute_numpy(me0.polygons, attribute='vertices', size=np.sum(faces_n_verts)).astype('int')
-        faces_weight = weight[faces_verts]
-        faces_weight = np.split(faces_weight, np.cumsum(faces_n_verts)[:-1])
-        '''
         faces_weight = [np.array([weight[v] for v in p.vertices]) for p in me0.polygons]
         try:
             fw_min = np.min(faces_weight, axis=1)
@@ -922,13 +912,12 @@ class tissue_update_contour_curves(Operator):
             for f in faces_mask:
                 seg = []
                 for e in f.edges:
-                    try:
-                        #seg.append(new_ids[np.where(edges_index == e.index)[0][0]])
+                    # only the edges crossed by this contour have a vertex
+                    if e.index in edges_id:
                         seg.append(edges_id[e.index])
                         if len(seg) == 2:
                             segments.append(seg)
                             seg = []
-                    except: pass
 
             total_segments = total_segments + segments
             total_verts = np.concatenate((total_verts, verts))

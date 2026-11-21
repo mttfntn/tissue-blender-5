@@ -2,6 +2,10 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Lattice along Surface: a Lattice that follows a surface and deforms the selected
+object with it.
+"""
+
 import bpy
 import bmesh
 from bpy.types import Operator

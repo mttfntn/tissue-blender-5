@@ -2,6 +2,12 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+"""Shared helpers: mesh conversion with or without modifiers, NumPy access to mesh
+data, patch and quad extraction for Tessellate, interpolation and thickness math,
+curves, vertex groups and timing. Most modules import all of it with
+`from .utils import *`, so a name defined here is visible everywhere.
+"""
+
 import bpy, bmesh
 import threading
 import numpy as np
@@ -44,26 +50,10 @@ def tissue_time(start_time, name, levels=0):
 # MATH
 # ------------------------------------------------------------------
 
-def _np_broadcast(arrays):
-    shapes = [arr.shape for arr in arrays]
-    for i in range(len(shapes[0])):
-        ish = [sh[i] for sh in shapes]
-        max_len = max(ish)
-        for j in range(len(arrays)):
-            leng = ish[j]
-            if leng == 1: arrays[j] = np.repeat(arrays[j], max_len, axis=i)
-    for arr in arrays:
-        arr = arr.flatten()
-    #vt = v0 + (v1 - v0) * t
-    return arrays
 
 def lerp(a, b, t):
     return a + (b - a) * t
 
-def _lerp2(v1, v2, v3, v4, v):
-    v12 = v1.lerp(v2,v.x) # + (v2 - v1) * v.x
-    v34 = v3.lerp(v4,v.x) # + (v4 - v3) * v.x
-    return v12.lerp(v34, v.y)# + (v34 - v12) * v.y
 
 def lerp2(v1, v2, v3, v4, v):
     v12 = v1 + (v2 - v1) * v.x
@@ -71,14 +61,12 @@ def lerp2(v1, v2, v3, v4, v):
     v = v12 + (v34 - v12) * v.y
     return v
 
-def lerp3(v1, v2, v3, v4, v):
-    loc = lerp2(v1.co, v2.co, v3.co, v4.co, v)
-    nor = lerp2(v1.normal, v2.normal, v3.normal, v4.normal, v)
-    nor.normalize()
-    return loc + nor * v.z
 
 import sys
 def np_lerp2(v00, v10, v01, v11, vx, vy, mode=''):
+    """Bilinear interpolation of the four corners of each patch at the Component's
+    (vx, vy) coordinates. Uses Numba when it's available.
+    """
     if 'numba' in sys.modules and use_numba_tess():
         if mode == 'verts':
             co2 = numba_interp_points(v00, v10, v01, v11, vx, vy)
@@ -93,6 +81,10 @@ def np_lerp2(v00, v10, v01, v11, vx, vy, mode=''):
     return co2
 
 def calc_thickness(co2,n2,vz,a,weight):
+    """Offset the interpolated points co2 along the normals n2 by the Component's z (vz),
+    scaled by the area a and the weight. The arrays are (patches, verts, 3), or
+    (patches, shape keys, verts, 3) for the Component's shape keys.
+    """
     if len(co2.shape) == 4:
         # With Shape Keys co2 is (n_patches, n_sk, n_verts, 3), while the area and
         # the weight can be shared by all keys: (n_patches, n_verts, 1)
@@ -134,61 +126,6 @@ def calc_thickness(co2,n2,vz,a,weight):
                 co3 = co2 + n2 * vz
     return co3
 
-def combine_and_flatten(arrays):
-    if 'numba' in sys.modules:
-        new_list = numba_combine_and_flatten(arrays)
-    else:
-        new_list = np.concatenate(arrays, axis=0)
-        new_list = new_list.flatten().tolist()
-    return new_list
-
-def np_interp2(grid, vx, vy):
-    grid_shape = grid.shape[-2:]
-    levels = len(grid.shape)-2
-    nu = grid_shape[0]
-    nv = grid_shape[1]
-    u = np.arange(nu)/(nu-1)
-    v = np.arange(nv)/(nv-1)
-    u_shape = [1]*levels + [nu]
-    v_shape = [1]*levels + [nv]
-
-    co0 = np.interp()
-    co1 = np.interp()
-    co2 = np.interp()
-    return co2
-
-def flatten_vector(vec, x, y):
-    """
-    Find planar vector according to two axis.
-    :arg vec: Input vector.
-    :type vec: :class:'mathutils.Vector'
-    :arg x: First axis.
-    :type x: :class:'mathutils.Vector'
-    :arg y: Second axis.
-    :type y: :class:'mathutils.Vector'
-    :return: Projected 2D Vector.
-    :rtype: :class:'mathutils.Vector'
-    """
-    vx = vec.project(x)
-    vy = vec.project(y)
-    mult = 1 if vx.dot(x) > 0 else -1
-    vx = mult*vx.length
-    mult = 1 if vy.dot(y) > 0 else -1
-    vy = mult*vy.length
-    return Vector((vx, vy))
-
-def vector_rotation(vec):
-    """
-    Find vector rotation according to X axis.
-    :arg vec: Input vector.
-    :type vec: :class:'mathutils.Vector'
-    :return: Angle in radians.
-    :rtype: float
-    """
-    v0 = Vector((1,0))
-    ang = Vector.angle_signed(vec, v0)
-    if ang < 0: ang = 2*pi + ang
-    return ang
 
 def signed_angle_with_axis(va, vb, axis):
     return atan2(va.cross(vb).dot(axis.normalized()), va.dot(vb))
@@ -250,6 +187,7 @@ def remove_temp_objects():
 
 def convert_object_to_mesh(ob, apply_modifiers=True, preserve_status=True, mirror_correction = True):
     #mirror_correction = False
+    """A temporary mesh object made from ob (any type), with or without its modifiers."""
     try: ob.name
     except: return None
     if ob.type != 'MESH':
@@ -376,59 +314,6 @@ def simple_to_mesh(ob, depsgraph=None):
     me.update()  # ensure normals are up-to-date (calc_normals removed in Blender 4.1+)
     return me
 
-def _join_objects(context, objects, link_to_scene=True, make_active=True):
-    C = context
-    bm = bmesh.new()
-
-    materials = {}
-    faces_materials = []
-    if config.evaluatedDepsgraph == None:
-        dg = C.evaluated_depsgraph_get()
-    else: dg = config.evaluatedDepsgraph
-
-    for o in objects:
-        bm.from_object(o, dg)
-        # add object's material to the dictionary
-        for m in o.data.materials:
-            if m not in materials: materials[m] = len(materials)
-        for f in o.data.polygons:
-            index = f.material_index
-            mat = o.material_slots[index].material
-            new_index = materials[mat]
-            faces_materials.append(new_index)
-    bm.verts.ensure_lookup_table()
-    bm.edges.ensure_lookup_table()
-    bm.faces.ensure_lookup_table()
-    # assign new indexes
-    for index, f in zip(faces_materials, bm.faces): f.material_index = index
-    # create object
-    me = bpy.data.meshes.new('joined')
-    bm.to_mesh(me)
-    me.update()
-    ob = bpy.data.objects.new('joined', me)
-    if link_to_scene: C.collection.objects.link(ob)
-    # make active
-    if make_active:
-        for o in C.view_layer.objects: o.select_set(False)
-        ob.select_set(True)
-        C.view_layer.objects.active = ob
-    # add materials
-    for m in materials.keys(): ob.data.materials.append(m)
-
-    return ob
-
-def join_objects(context, objects):
-    generated_data = [o.data for o in objects]
-    context.view_layer.update()
-    for o in context.view_layer.objects:
-        o.select_set(o in objects)
-    bpy.ops.object.join()
-    new_ob = context.view_layer.objects.active
-    new_ob.select_set(True)
-    for me in generated_data:
-        if me != new_ob.data:
-            bpy.data.meshes.remove(me)
-    return new_ob
 
 def join_objects(objects):
     new_ob = objects[0]
@@ -437,16 +322,6 @@ def join_objects(objects):
         bpy.ops.object.join()
     return new_ob
 
-def repeat_mesh(me, n):
-    '''
-    Return Mesh data adding and applying an array without offset (Slower)
-    '''
-    bm = bmesh.new()
-    for i in range(n): bm.from_mesh(me)
-    new_me = me.copy()
-    bm.to_mesh(new_me)
-    bm.free()
-    return new_me
 
 def array_mesh(ob, n):
     '''
@@ -463,21 +338,6 @@ def array_mesh(ob, n):
     me = simple_to_mesh(ob, depsgraph=dg)
     ob.modifiers.remove(arr)
     return me
-
-def array_mesh_object(ob, n):
-    '''
-    Return Mesh data adding and applying an array without offset
-    '''
-    arr = ob.modifiers.new('Repeat','ARRAY')
-    arr.relative_offset_displace[0] = 0
-    arr.count = n
-    ob.modifiers.update()
-    override = bpy.context.copy()
-    override['active_object'] = ob
-    override = {'active_object': ob}
-    with bpy.context.temp_override(**override):
-        bpy.ops.object.modifier_apply(modifier=arr.name)
-    return ob
 
 
 def get_mesh_before_subs(ob):
@@ -507,21 +367,6 @@ def get_mesh_before_subs(ob):
 # MESH FUNCTIONS
 # ------------------------------------------------------------------
 
-def calc_verts_area(me):
-    n_verts = len(me.vertices)
-    n_faces = len(me.polygons)
-    vareas = np.zeros(n_verts)
-    vcount = np.zeros(n_verts)
-    parea = [0]*n_faces
-    pverts = [0]*n_faces*4
-    me.polygons.foreach_get('area', parea)
-    me.polygons.foreach_get('vertices', pverts)
-    parea = np.array(parea)
-    pverts = np.array(pverts).reshape((n_faces, 4))
-    for a, verts in zip(parea,pverts):
-        vareas[verts] += a
-        vcount[verts] += 1
-    return vareas / vcount
 
 def calc_verts_area_bmesh(me):
     bm = bmesh.new()
@@ -539,122 +384,11 @@ def calc_verts_area_bmesh(me):
 
 import time
 
-def get_patches____(me_low, me_high, sides, subs, bool_selection, bool_material_id, material_id):
-    nv = len(me_low.vertices)       # number of vertices
-    ne = len(me_low.edges)          # number of edges
-    nf = len(me_low.polygons)       # number of polygons
-    n = 2**subs + 1            # number of vertices along each patch edge
-    nev = ne * n               # number of vertices along the subdivided edges
-    nevi = nev - 2*ne          # internal vertices along subdividede edges
-
-    n0 = 2**(subs-1) - 1
-
-    # filtered polygonal faces
-    poly_sides = np.array([len(p.vertices) for p in me_low.polygons])
-    mask = poly_sides == sides
-    if bool_material_id:
-        mask_material = [1]*nf
-        me_low.polygons.foreach_get('material_index',mask_material)
-        mask_material = np.array(mask_material) == material_id
-        mask = np.logical_and(mask,mask_material)
-    if bool_selection:
-        mask_selection = [True]*nf
-        me_low.polygons.foreach_get('select',mask_selection)
-        mask_selection = np.array(mask_selection)
-        mask = np.logical_and(mask,mask_selection)
-    polys = np.array(me_low.polygons)[mask]
-    mult = n0**2 + n0
-    ps = poly_sides * mult + 1
-    ps = np.insert(ps,0,nv + nevi, axis=0)[:-1]
-    ips = ps.cumsum()[mask]                    # incremental polygon sides
-    nf = len(polys)
-
-    # when subdivided quad faces follows a different pattern
-    if sides == 4:
-        n_patches = nf
-    else:
-        n_patches = nf*sides
-
-    if sides == 4:
-        patches = np.zeros((nf,n,n),dtype='int')
-        verts = [[vv for vv in p.vertices] for p in polys if len(p.vertices) == sides]
-        verts = np.array(verts).reshape((-1,sides))
-
-        # filling corners
-
-        patches[:,0,0] = verts[:,0]
-        patches[:,n-1,0] = verts[:,1]
-        patches[:,n-1,n-1] = verts[:,2]
-        patches[:,0,n-1] = verts[:,3]
-
-        if subs != 0:
-            shift_verts = np.roll(verts, -1, axis=1)[:,:,None]
-            edge_keys = np.concatenate((shift_verts, verts[:,:,None]), axis=2)
-            edge_keys.sort()
-
-            edge_verts = np.array(me_low.edge_keys) # edges keys
-            edges_index = np.zeros((ne,ne),dtype='int')
-            edges_index[edge_verts[:,0],edge_verts[:,1]] = np.arange(ne)
-
-            evi = np.arange(nevi) + nv
-            evi = evi.reshape(ne,n-2)           # edges inner verts
-            straight = np.arange(n-2)+1
-            inverted = np.flip(straight)
-            inners = np.array([[j*(n-2)+i for j in range(n-2)] for i in range(n-2)])
-
-            ek1 = np.array(me_high.edge_keys)   # edges keys
-            ids0 = np.arange(ne)*(n-1)      # edge keys highres
-            keys0 = ek1[ids0]               # first inner edge
-            keys1 = ek1[ids0 + n-2]         # last inner edge
-            keys = np.concatenate((keys0,keys1))
-            pick_verts = np.array((inverted,straight))
-
-            patch_index = np.arange(nf)[:,None,None]
-
-            # edge 0
-            e0 = edge_keys[:,0]                             # get edge key (faces, 2)
-            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
-            edge_verts = evi[edge_id]                       # indexes of inner vertices
-            test = np.concatenate((verts[:,0,None], edge_verts[:,0,None]),axis=1)
-            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
-            #dir = np.full(verts[:,0].shape, 0, dtype='int8')
-            ids = pick_verts[dir][:,None,:]                           # indexes order along the side
-            patches[patch_index,ids,0] = edge_verts[:,None,:]                   # assign indexes
-            #patches[:,msk] = inverted # np.flip(patches[msk])
-
-            # edge 1
-            e0 = edge_keys[:,1]                             # get edge key (faces, 2)
-            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
-            edge_verts = evi[edge_id]                       # indexes of inner vertices
-            test = np.concatenate((verts[:,1,None], edge_verts[:,0,None]),axis=1)
-            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
-            ids = pick_verts[dir][:,:,None]                           # indexes order along the side
-            patches[patch_index,n-1,ids] = edge_verts[:,:,None]                   # assign indexes
-
-            # edge 2
-            e0 = edge_keys[:,2]                             # get edge key (faces, 2)
-            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
-            edge_verts = evi[edge_id]                       # indexes of inner vertices
-            test = np.concatenate((verts[:,3,None], edge_verts[:,0,None]),axis=1)
-            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
-            ids = pick_verts[dir][:,None,:]                           # indexes order along the side
-            patches[patch_index,ids,n-1] = edge_verts[:,None,:]                   # assign indexes
-
-            # edge 3
-            e0 = edge_keys[:,3]                             # get edge key (faces, 2)
-            edge_id = edges_index[e0[:,0],e0[:,1]]          # edge index
-            edge_verts = evi[edge_id]                       # indexes of inner vertices
-            test = np.concatenate((verts[:,0,None], edge_verts[:,0,None]),axis=1)
-            dir = (test[:,None] == keys).all(2).any(1).astype('int8')
-            ids = pick_verts[dir][:,:,None]                           # indexes order along the side
-            patches[patch_index,0,ids] = edge_verts[:,:,None]                   # assign indexes
-
-            # fill inners
-            patches[:,1:-1,1:-1] = inners[None,:,:] + ips[:,None,None]
-
-    return patches, mask
 
 def tessellate_prepare_component(ob1, props):
+    """Prepare a temporary copy of the Component: its coordinates are remapped to its
+    bounding box according to Bounds, Scale and Offset. Returns the object and its area.
+    """
     mode = props['mode']
     bounds_x = props['bounds_x']
     bounds_y = props['bounds_y']
@@ -784,16 +518,6 @@ def tessellate_prepare_component(ob1, props):
                     for e in cut_edges:
                         seam = True
                         # Prevent glitches
-                        '''
-                        for e1 in original_edges:
-                            match_00 = (e.verts[0].co-e1.verts[0].co).length < thres
-                            match_11 = (e.verts[1].co-e1.verts[1].co).length < thres
-                            match_01 = (e.verts[0].co-e1.verts[1].co).length < thres
-                            match_10 = (e.verts[1].co-e1.verts[0].co).length < thres
-                            if (match_00 and match_11) or (match_01 and match_10):
-                                seam = False
-                                break
-                        '''
                         e.seam = seam
 
                 if bound == 'CYCLIC':
@@ -827,6 +551,10 @@ def tessellate_prepare_component(ob1, props):
     return ob1, com_area
 
 def get_quads(me, bool_selection):
+    """Quad fill: the corner vertex indices of each face as a 2x2 grid. Triangles repeat
+    a corner, faces with more sides are cut into strips of quads.
+    Returns (quads, mask of the faces used, their material indices).
+    """
     nf = len(me.polygons)
 
     verts = []
@@ -856,6 +584,10 @@ def get_quads(me, bool_selection):
     return verts, mask, materials
 
 def get_patches(me_low, me_high, sides, subs, bool_selection): #, bool_material_id, material_id):
+    """Patch fill: for each 4-sided face of me_low (the Base before its last Subdivision),
+    the grid of vertex indices of me_high (after it) covering that face.
+    Returns (patches, mask of the faces used, their material indices).
+    """
     nv = len(me_low.vertices)       # number of vertices
     ne = len(me_low.edges)          # number of edges
     nf = len(me_low.polygons)       # number of polygons
@@ -1047,12 +779,6 @@ def get_edges_numpy_ex(mesh):
     polygons_diag = np.array(polygons_diag,dtype=np.int32)
     return np.concatenate((edges_verts, polygons_diag), axis=0)
 
-def get_polygons_select_numpy(mesh):
-    n_polys = len(mesh.polygons)
-    selections = [0]*n_polys*2
-    mesh.polygons.foreach_get('select', selections)
-    selections = np.array(selections)
-    return selections
 
 def get_attribute_numpy(elements_list, attribute='select', mult=1, size=None):
     '''
@@ -1069,25 +795,6 @@ def get_attribute_numpy(elements_list, attribute='select', mult=1, size=None):
     if mult > 1: values = values.reshape((n_elements,mult))
     return values
 
-def get_vertices(mesh):
-    n_verts = len(mesh.vertices)
-    verts = [0]*n_verts*3
-    mesh.vertices.foreach_get('co', verts)
-    verts = np.array(verts).reshape((n_verts,3))
-    verts = [Vector(v) for v in verts]
-    return verts
-
-def get_faces(mesh):
-    faces = [[v for v in f.vertices] for f in mesh.polygons]
-    return faces
-
-def get_faces_numpy(mesh):
-    faces = [[v for v in f.vertices] for f in mesh.polygons]
-    return np.array(faces)
-
-def get_faces_edges_numpy(mesh):
-    faces = [v.edge_keys for f in mesh.polygons]
-    return np.array(faces)
 
 def find_curves(edges, n_verts):
     verts_dict = {key:[] for key in range(n_verts)}
@@ -1211,14 +918,6 @@ def find_curves_attribute(edges, n_verts, attribute):
             curves.append(curve)
     return curves, ordered_attr
 
-def curve_from_points(points, name='Curve'):
-    curve = bpy.data.curves.new(name,'CURVE')
-    for c in points:
-        s = curve.splines.new('POLY')
-        s.points.add(len(c))
-        for i,p in enumerate(c): s.points[i].co = p.xyz + [1]
-    ob_curve = bpy.data.objects.new(name,curve)
-    return ob_curve
 
 def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, merge_distance=1, set_active=True, only_data=False, curve=None, spline_type='POLY'):
     if not curve:
@@ -1266,50 +965,6 @@ def curve_from_pydata(points, radii, indexes, name='Curve', skip_open=False, mer
             bpy.context.view_layer.objects.active = ob_curve
         return ob_curve
 
-def update_curve_from_pydata_simple(curve, points, radii, indexes, skip_open=False, merge_distance=1, set_active=True, only_data=False, spline_type='POLY'):
-    curve.splines.clear()
-    curve.dimensions = '3D'
-    use_rad = True
-    for c in indexes:
-        bool_cyclic = c[0] == c[-1]
-        if bool_cyclic: c.pop(-1)
-        # cleanup
-        pts = np.array([points[i] for i in c])
-        try:
-            rad = np.array([radii[i] for i in c])
-        except:
-            use_rad = False
-            rad = 1
-        if merge_distance > 0:
-            pts1 = np.roll(pts,1,axis=0)
-            dist = np.linalg.norm(pts1-pts, axis=1)
-            count = 0
-            n = len(dist)
-            mask = np.ones(n).astype('bool')
-            for i in range(n):
-                count += dist[i]
-                if count > merge_distance: count = 0
-                else: mask[i] = False
-            pts = pts[mask]
-            if use_rad: rad = rad[mask]
-
-        if skip_open and not bool_cyclic: continue
-        s = curve.splines.new(spline_type)
-        n_pts = len(pts)
-        s.points.add(n_pts-1)
-        w = np.ones(n_pts).reshape((n_pts,1))
-        co = np.concatenate((pts,w),axis=1).reshape((n_pts*4))
-        s.points.foreach_set('co',co)
-        if use_rad: s.points.foreach_set('radius',rad)
-        s.use_cyclic_u = bool_cyclic
-    if only_data:
-        return curve
-    else:
-        ob_curve = bpy.data.objects.new(name,curve)
-        bpy.context.collection.objects.link(ob_curve)
-        if set_active:
-            bpy.context.view_layer.objects.active = ob_curve
-        return ob_curve
 
 def update_curve_from_pydata(curve, points, normals, radii, indexes, merge_distance=1, pattern=[1,0], depth=0.1, offset=0):
     curve.splines.clear()
@@ -1447,27 +1102,6 @@ def run_edge_loop(edge):
         vert_loop = vert_loop0
     return vert_loop, edge_loop
 
-def curve_from_vertices(indexes, verts, name='Curve'):
-    """
-    Curve data from given vertices.
-    :arg indexes: List of Lists of indexes of the vertices.
-    :type indexes: List of Lists of int
-    :arg verts: List of vertices.
-    :type verts: List of :class:'bpy.types.MeshVertex'
-    :arg name: Name of the Curve data.
-    :type name: str
-    :return: Generated Curve data
-    :rtype: :class:'bpy.types.Curve'
-    """
-    curve = bpy.data.curves.new(name,'CURVE')
-    for c in indexes:
-        s = curve.splines.new('POLY')
-        s.points.add(len(c))
-        for i,p in enumerate(c):
-            s.points[i].co = verts[p].co.xyz + [1]
-            #s.points[i].tilt = degrees(asin(verts[p].co.z))
-    ob_curve = bpy.data.objects.new(name,curve)
-    return ob_curve
 
 def nurbs_from_vertices(indexes, co, radii=[], name='Curve', set_active=True, interpolation='POLY'):
     curve = bpy.data.curves.new(name,'CURVE')
@@ -1541,12 +1175,6 @@ def bmesh_get_weight_numpy(group_index, layer, verts, normalized=False):
         weight = (weight - np.min(weight))/np.ptp(weight)
     return weight
 
-def bmesh_set_weight_numpy(group_index, layer, verts, weight):
-    for i, v in enumerate(verts):
-        dvert = v[layer]
-        if group_index in dvert:
-            dvert[group_index] = weight[i]
-    return verts
 
 def bmesh_set_weight_numpy(bm, group_index, weight):
     layer = bm.verts.layers.deform.verify()
@@ -1560,18 +1188,6 @@ def set_weight_numpy(vg, weight):
     for i, w in enumerate(weight):
         vg.add([i], w, 'REPLACE')
     return vg
-
-def uv_from_bmesh(bm, uv_index=None):
-    if uv_index:
-        uv_lay = bm.loops.layers.uv[uv_index]
-    else:
-        uv_lay = bm.loops.layers.uv.active
-    uv_co = [0]*len(bm.verts)
-
-    for face in bm.faces:
-        for vert,loop in zip(face.verts, face.loops):
-            uv_co[vert.index] = loop[uv_lay].uv
-    return uv_co
 
 
 def get_corner_attribute_vectors(obj_or_mesh, attr_name=None, use_evaluated=True, prefer_attributes=True):
@@ -1863,39 +1479,6 @@ def get_uv_rotation_shifts(obj_or_mesh, uv_name=None, use_evaluated=True, prefer
         except: pass
     return shifts
 
-def get_uv_edge_vectors(me, uv_map = 0, only_positive=False):
-    # Try to get per-loop UVs from corner attributes first, fallback to uv_layers
-    loop_uvs = get_corner_attribute_vectors(me, attr_name=None, use_evaluated=False, prefer_attributes=True)
-    use_corner = loop_uvs is not None
-
-    count = 0
-    uv_vectors = {}
-    for i, f in enumerate(me.polygons):
-        f_verts = len(f.vertices)
-        for j0 in range(f_verts):
-            j1 = (j0+1)%f_verts
-            if use_corner:
-                uv0 = Vector(loop_uvs[count + j0])
-                uv1 = Vector(loop_uvs[count + j1])
-            else:
-                # legacy uv layer access
-                uv0 = me.uv_layers[uv_map].data[count + j0].uv
-                uv1 = me.uv_layers[uv_map].data[count + j1].uv
-
-            delta_uv = (uv1 - uv0)
-            try:
-                delta_uv = delta_uv.normalized()
-            except Exception:
-                # zero-length -> leave as zero vector
-                pass
-            if only_positive:
-                delta_uv.x = abs(delta_uv.x)
-                delta_uv.y = abs(delta_uv.y)
-            edge_key = tuple(sorted([f.vertices[j0], f.vertices[j1]]))
-            uv_vectors[edge_key] = delta_uv
-        count += f_verts
-    uv_vectors = [uv_vectors[tuple(sorted(e.vertices))] for e in me.edges]
-    return uv_vectors
 
 def mesh_diffusion(me, values, iter, diff=0.2, uv_dir=0):
     values = np.array(values)
@@ -2000,15 +1583,6 @@ def fill_neighbors_attribute(verts,weight,attribute):
 # MODIFIERS
 # ------------------------------------------------------------------
 
-def mod_preserve_topology(mod):
-    same_topology_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',
-        'UV_PROJECT','UV_WARP','VERTEX_WEIGHT_EDIT','VERTEX_WEIGHT_MIX',
-        'VERTEX_WEIGHT_PROXIMITY','ARMATURE','CAST','CURVE','DISPLACE','HOOK',
-        'LAPLACIANDEFORM','LATTICE','MESH_DEFORM','SHRINKWRAP','SIMPLE_DEFORM',
-        'SMOOTH','CORRECTIVE_SMOOTH','LAPLACIANSMOOTH','SURFACE_DEFORM','WARP',
-        'WAVE','CLOTH','COLLISION','DYNAMIC_PAINT','SOFT_BODY'
-        )
-    return mod.type in same_topology_modifiers
 
 def mod_preserve_shape(mod):
     same_shape_modifiers = ('DATA_TRANSFER','NORMAL_EDIT','WEIGHTED_NORMAL',

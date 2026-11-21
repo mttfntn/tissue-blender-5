@@ -17,6 +17,10 @@
 
 # Load add-on metadata from manifest.json to be compatible with Blender Extensions.
 # Falls back to an embedded bl_info if manifest is missing or unreadable.
+"""Entry point of the add-on: reads the manifest, imports the modules, lists every
+class to register and adds Tissue's settings to bpy.types.Object.
+"""
+
 import os
 
 _pkg_dir = os.path.dirname(__file__)
@@ -26,7 +30,7 @@ _toml_path = os.path.join(_pkg_dir, 'blender_manifest.toml')
 _bl_info_fallback = {
     "name": "Tissue",
     "author": "Alessandro Zomparelli",
-    "version": (0, 3, 78),
+    "version": (0, 3, 79),
     "blender": (5, 0, 0),
     "location": "",
     "description": "Tools for Computational Design",
@@ -276,9 +280,14 @@ def register():
     bpy.types.Object.tex_reaction_diffusion_settings = PointerProperty(
         type=texture_reaction_diffusion.tex_reaction_diffusion_prop
         )
-    # weight_tools
-    bpy.app.handlers.frame_change_post.append(weight_reaction_diffusion.reaction_diffusion_def)
-    bpy.app.handlers.frame_change_post.append(texture_reaction_diffusion.tex_reaction_diffusion_def)
+    # No frame handlers are added here: each tool adds its own while it is in use
+    # (animated Tessellate, Polyhedra, Reaction-Diffusion...).
+
+
+def is_tissue_function(function):
+    module = getattr(function, "__module__", None) or ""
+    return module == __name__ or module.startswith(__name__ + ".")
+
 
 def unregister():
     from bpy.utils import unregister_class
@@ -295,13 +304,11 @@ def unregister():
     ):
         delattr(bpy.types.Object, property_name)
 
-    frame_change_handlers = bpy.app.handlers.frame_change_post
-    for handler in (
-        weight_reaction_diffusion.reaction_diffusion_def,
-        texture_reaction_diffusion.tex_reaction_diffusion_def,
-    ):
-        while handler in frame_change_handlers:
-            frame_change_handlers.remove(handler)
+    # Remove the handlers the tools added while they were used, so nothing of
+    # Tissue keeps running after it is disabled (from upstream's b5-dev branch)
+    for handlers in (bpy.app.handlers.frame_change_post, bpy.app.handlers.render_init):
+        for handler in [h for h in handlers if is_tissue_function(h)]:
+            handlers.remove(handler)
 
     for cls in reversed(classes):
         unregister_class(cls)
