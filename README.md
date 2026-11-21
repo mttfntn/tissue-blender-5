@@ -1,5 +1,12 @@
 # Tissue for Blender 5.3
 
+[![Blender 5.3](https://img.shields.io/badge/Blender-5.3-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/download/)
+[![Release v0.3.80](https://img.shields.io/badge/release-v0.3.80-0A7BBB)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
+[![Tests](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml)
+[![License GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-4C9A2A)](LICENSE)
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://docs.blender.org/api/current/)
+[![Fork of Tissue by Alessandro Zomparelli](https://img.shields.io/badge/fork%20of-Tissue%20by%20Alessandro%20Zomparelli-555555)](https://github.com/alessandro-zomparelli/tissue)
+
 A fork of [Tissue](https://github.com/alessandro-zomparelli/tissue), the Blender add-on for computational design by Alessandro Zomparelli (Co-de-iT), with extra bug fixes, made for Blender 5.3.
 
 Older Tissue releases don't work properly on Blender 5: on 0.3.71, Tessellate and many other tools fail with `this type doesn't support IDProperties`. Upstream 0.3.76 fixes that error. This fork starts from 0.3.76 and fixes the bugs listed below.

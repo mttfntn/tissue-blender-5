@@ -86,7 +86,7 @@ For larger changes, write the equivalent: a static unit test is not enough to sh
 ## Release checklist
 
 1. Bump the version in `tissue/blender_manifest.toml` and `tissue/__init__.py` (`_bl_info_fallback`).
-2. Update the README: the fix list, the test count.
+2. Update the README: the fix list, the test count, and the static release badge (`release-vX.Y.Z` in the badge URL and alt text; shields.io dynamic GitHub badges cannot read this private repo).
 3. Run the suite with and without Numba.
 4. Build, `validate`, and install the zip in an isolated profile (`BLENDER_USER_RESOURCES`), then tessellate once.
 5. Commit and push `main`, wait for the run to pass.

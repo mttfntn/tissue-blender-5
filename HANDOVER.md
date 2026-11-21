@@ -91,7 +91,7 @@ GitHub also runs the tests on Blender 5.3 and builds the zip whenever you push. 
 GitHub builds and publishes a release by itself when you push a version tag.
 
 1. Raise the version in two places in `tissue/`: `version` in `blender_manifest.toml`, and `"version"` in `_bl_info_fallback` in `__init__.py`.
-2. Update the list of fixes in the README.
+2. Update the README: the list of fixes, and the version in the release badge at the top (`release-v0.3.80` appears twice in that line). The badge is fixed text, because badges that read the version from GitHub only work on public repositories.
 3. Run the tests, then commit and push.
 4. Make a tag named after the new version, with the release notes as its message, and push it:
 
