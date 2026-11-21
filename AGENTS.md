@@ -79,18 +79,23 @@ For larger changes, write the equivalent: a static unit test is not enough to sh
 ## Repository and git
 
 - `main` is the fork's branch, published to https://github.com/mttfntn/tissue-blender-5. In a fresh clone that remote is `origin`. Upstream is https://github.com/alessandro-zomparelli/tissue (`master`, and fixes that sometimes wait on `b5-dev`).
-- `.github/workflows/tests.yml` runs one job on Linux: tests on Blender 5.3, builds and validates the zip, uploads it as an artifact kept 3 days (`continue-on-error`, the account's artifact storage can be full), and on a `v*` tag publishes a GitHub release with `gh release create --notes-from-tag`. The tag must equal `v` + the manifest version.
+- `.github/workflows/tests.yml` runs one job on Linux: tests on Blender 5.3, builds and validates the zip, and on a `v*` tag publishes a GitHub release with `gh release create --notes-from-tag`. The tag must equal `v` + the manifest version. It uploads **no artifacts**: the account's artifact storage is shared and was full, so don't add `upload-artifact` back. On a tag it also writes `release-size.json` (shields.io endpoint format) and force-pushes it as the only commit of the `badges` branch, which the README's download-size badge reads through raw.githubusercontent.com (shields.io refuses release-download URLs). Don't delete that branch; the workflow ignores pushes to it.
 - `.github/find-blender.sh <version>` prints the Blender download URL. download.blender.org answers 403 to some GitHub runners, so it falls back to official mirrors; don't replace it with a single direct URL.
 - The zip contains only `tissue/` (`paths_exclude_pattern` drops `__pycache__` and zips). `tissue/LICENSE` is a copy of the root `LICENSE`, so the zip carries the license; keep them identical.
 
 ## Release checklist
 
 1. Bump the version in `tissue/blender_manifest.toml` and `tissue/__init__.py` (`_bl_info_fallback`).
-2. Update the README: the fix list, the test count, and the static release badge (`release-vX.Y.Z` in the badge URL and alt text; shields.io dynamic GitHub badges cannot read this private repo).
+2. Update the README: the fix list and the test count. The badges are live (shields.io and GitHub read the manifest, the latest release and the `badges` branch): never hard-code a version in them.
 3. Run the suite with and without Numba.
 4. Build, `validate`, and install the zip in an isolated profile (`BLENDER_USER_RESOURCES`), then tessellate once.
 5. Commit and push `main`, wait for the run to pass.
 6. `git tag -a v<version> -m "<release notes>"` and push the tag: the workflow publishes the release.
+
+## Community files
+
+- This is **not** the official Tissue and not a GitHub fork. Issue forms (`.github/ISSUE_TEMPLATE/`, blank issues disabled), `CONTRIBUTING.md` and `SECURITY.md` send problems that also happen upstream to https://github.com/alessandro-zomparelli/tissue/issues; keep that distinction when editing them.
+- `.github/pull_request_template.md` holds the PR checklist. Security reports go through the repository's private vulnerability reporting.
 
 ## Original workspace (optional)
 

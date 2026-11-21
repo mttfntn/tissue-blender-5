@@ -1,0 +1,9 @@
+# Blender scenes and their backups
+*.blend
+*.blend[0-9]*
+# Build output
+dist/
+*.zip
+# Python caches
+__pycache__/
+*.pyc

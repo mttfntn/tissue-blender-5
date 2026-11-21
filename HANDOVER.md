@@ -45,6 +45,8 @@ Outside that folder:
 | `docs/` | The user documentation, with images |
 | `.github/workflows/tests.yml` | The tests, build and releases that GitHub runs |
 | `.github/find-blender.sh` | Finds the Blender download for GitHub, falling back to mirrors |
+| `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md` | The forms for new issues and the checklist for pull requests |
+| `CONTRIBUTING.md`, `SECURITY.md` | How to report problems, contribute, and report security problems privately |
 
 ### How Tessellate works
 
@@ -91,7 +93,7 @@ GitHub also runs the tests on Blender 5.3 and builds the zip whenever you push. 
 GitHub builds and publishes a release by itself when you push a version tag.
 
 1. Raise the version in two places in `tissue/`: `version` in `blender_manifest.toml`, and `"version"` in `_bl_info_fallback` in `__init__.py`.
-2. Update the README: the list of fixes, and the version in the release badge at the top (`release-v0.3.80` appears twice in that line). The badge is fixed text, because badges that read the version from GitHub only work on public repositories.
+2. Update the README: the list of fixes and the number of tests. The badges at the top update by themselves, so don't write a version in them.
 3. Run the tests, then commit and push.
 4. Make a tag named after the new version, with the release notes as its message, and push it:
 
@@ -101,6 +103,10 @@ git push origin v0.3.81
 ```
 
 GitHub then runs the tests, builds the zip and publishes it as a release, with the tag's message as the notes. The release stops with an error if the tag doesn't match the version in the manifest. The release appears in the **Releases** section of the repository.
+
+The workflow also updates the **download size** badge in the README. shields.io can't read the size of a release file directly, so the workflow writes it into a small file, `release-size.json`, and puts it alone on a separate branch called `badges`, replacing what was there. The badge reads that file. Don't delete the `badges` branch, and don't work on it: the tests don't run there.
+
+GitHub doesn't keep the zip of ordinary pushes (no "artifacts"): the storage for them is shared by every repository of the account and can fill up. Releases carry the zip; to try a commit, build it yourself as shown below.
 
 To build the zip on your computer instead, run this from the repository folder:
 
