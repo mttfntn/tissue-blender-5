@@ -16,9 +16,9 @@ body:
       label: Does it also happen with the official Tissue?
       description: To check, install the official Tissue from its [releases](https://github.com/alessandro-zomparelli/tissue/releases). Uninstall this fork first, the two share the same add-on ID.
       options:
+        - I didn't check
         - No, only with this fork
         - I can't check (for example, the official Tissue doesn't run on my setup)
-        - I didn't check
     validations:
       required: true
 
