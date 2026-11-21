@@ -7,7 +7,8 @@ Instructions for AI coding agents working on this repository. For people, the sa
 Blender add-on **Tissue** (computational design tools), forked from https://github.com/alessandro-zomparelli/tissue at 0.3.76, with fixes for Blender 5. Owner of the fork: https://github.com/mttfntn/tissue-blender-5. Current version: see `version` in `blender_manifest.toml`.
 
 - Pure Python, run by Blender's bundled Python (3.13 on Blender 5.3). Depends only on `bpy`, `bmesh`, `mathutils` and NumPy, all bundled with Blender. Numba is optional.
-- Distributed as a Blender extension zip. `blender_manifest.toml` is the source of truth for metadata; `_bl_info_fallback` in `__init__.py` must carry the same version.
+- The add-on is the `tissue/` folder; everything else (tests, docs, CI) is outside it. Distributed as a Blender extension zip built from `tissue/`. `tissue/blender_manifest.toml` is the source of truth for metadata; `_bl_info_fallback` in `tissue/__init__.py` must carry the same version.
+- Supports **Blender 5.3 only** (`blender_version_min = "5.3.0"`, no maximum). CI tests 5.3 only.
 - License GPL-3.0-or-later. Keep the SPDX headers and the credit to Alessandro Zomparelli.
 
 ## Commands
@@ -21,8 +22,8 @@ blender --background --factory-startup --python-exit-code 1 --python tests/run_t
 TISSUE_TEST_NO_NUMBA=1 blender --background --factory-startup --python-exit-code 1 --python tests/run_tests.py
 # a specific Numba: folder made with `<blender python> -m pip install --target <folder> numba llvmlite`
 TISSUE_TEST_SITE=<folder> blender --background --factory-startup --python-exit-code 1 --python tests/run_tests.py
-# build the extension zip (from the folder that contains the repository)
-blender --command extension build --source-dir <repo folder> --output-dir .
+# build the extension zip
+blender --command extension build --source-dir tissue --output-dir .
 blender --command extension validate <zip>
 ```
 
@@ -33,6 +34,8 @@ The suite takes about a minute and has 52 tests. All of them must pass before a 
 - **Never test in the user's open Blender** unless asked: start separate `--background` instances.
 
 ## Architecture
+
+All paths below are in `tissue/`.
 
 | File | Role |
 |---|---|
@@ -76,16 +79,18 @@ For larger changes, write the equivalent: a static unit test is not enough to sh
 ## Repository and git
 
 - `main` is the fork's branch, published to https://github.com/mttfntn/tissue-blender-5. In a fresh clone that remote is `origin`. Upstream is https://github.com/alessandro-zomparelli/tissue (`master`, and fixes that sometimes wait on `b5-dev`).
-- `.github/workflows/tests.yml` runs the suite on Blender 4.5 to 5.3 on Linux, plus the next version's daily build, where failures are allowed.
-- The zip leaves out `docs/`, `tests/`, `.github/`, `AGENTS.md` and `HANDOVER.md` (`paths_exclude_pattern` in the manifest). Add new non-add-on files there.
+- `.github/workflows/tests.yml` runs one job on Linux: tests on Blender 5.3, builds and validates the zip, uploads it as an artifact kept 3 days (`continue-on-error`, the account's artifact storage can be full), and on a `v*` tag publishes a GitHub release with `gh release create --notes-from-tag`. The tag must equal `v` + the manifest version.
+- `.github/find-blender.sh <version>` prints the Blender download URL. download.blender.org answers 403 to some GitHub runners, so it falls back to official mirrors; don't replace it with a single direct URL.
+- The zip contains only `tissue/` (`paths_exclude_pattern` drops `__pycache__` and zips). `tissue/LICENSE` is a copy of the root `LICENSE`, so the zip carries the license; keep them identical.
 
 ## Release checklist
 
-1. Bump the version in `blender_manifest.toml` and `__init__.py` (`_bl_info_fallback`).
-2. Update the README: version in the install section, the fix list, the test count.
+1. Bump the version in `tissue/blender_manifest.toml` and `tissue/__init__.py` (`_bl_info_fallback`).
+2. Update the README: the fix list, the test count.
 3. Run the suite with and without Numba.
 4. Build, `validate`, and install the zip in an isolated profile (`BLENDER_USER_RESOURCES`), then tessellate once.
-5. Commit and push `main`.
+5. Commit and push `main`, wait for the run to pass.
+6. `git tag -a v<version> -m "<release notes>"` and push the tag: the workflow publishes the release.
 
 ## Original workspace (optional)
 

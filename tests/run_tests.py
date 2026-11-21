@@ -22,6 +22,7 @@ import bpy
 import numpy as np
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ADDON = os.path.join(REPO, "tissue")    # the add-on itself lives in the tissue/ folder
 
 TESTS = []
 
@@ -32,11 +33,11 @@ def test(func):
 
 
 def enable_tissue():
-    # Copy the add-on into a folder called "tissue" so it imports under its own
-    # name wherever the repository is checked out.
+    # Import a copy of the add-on, so running the tests leaves no __pycache__
+    # folders in the repository.
     root = tempfile.mkdtemp(prefix="tissue_tests_")
-    shutil.copytree(REPO, os.path.join(root, "tissue"),
-                    ignore=shutil.ignore_patterns(".git", "docs", "tests", "__pycache__"))
+    shutil.copytree(ADDON, os.path.join(root, "tissue"),
+                    ignore=shutil.ignore_patterns("__pycache__"))
     sys.path.insert(0, root)
     addon_utils.enable("tissue", default_set=True, handle_error=None)
     if "tissue" not in bpy.context.preferences.addons:

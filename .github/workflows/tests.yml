@@ -1,5 +1,6 @@
-# Runs tests/run_tests.py inside several Blender versions on every push and
-# pull request, and once a week to catch changes in the next Blender's daily build.
+# Tests the add-on in Blender 5.3 and builds the extension zip, on every push,
+# pull request and once a week. Pushing a version tag (v0.3.80, ...) also publishes
+# a GitHub release with the zip: the notes are the tag's message.
 name: Tests
 
 on:
@@ -9,45 +10,22 @@ on:
   schedule:
     - cron: "0 6 * * 1"  # Mondays at 06:00 UTC
 
-# download.blender.org sometimes refuses a request from GitHub's runners (403):
-# retry instead of failing the whole job.
-env:
-  CURL_RETRY: --retry 5 --retry-all-errors --retry-delay 15
+permissions:
+  contents: write   # needed to publish releases
 
 jobs:
   test:
-    name: Blender ${{ matrix.blender }}
+    name: Test and build on Blender 5.3
     runs-on: ubuntu-latest
-    # A failure in the beta is reported but does not fail the run.
-    continue-on-error: ${{ matrix.beta }}
-    strategy:
-      fail-fast: false
-      matrix:
-        blender: ["4.5", "5.0", "5.1", "5.2", "5.3"]
-        beta: [false]
-        include:
-          - blender: "5.4"
-            beta: true
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Find the latest ${{ matrix.blender }} build
+      # download.blender.org refuses some of GitHub's runners (403): find-blender.sh
+      # falls back to the official mirrors.
+      - name: Find the latest Blender 5.3
         id: build
         run: |
-          if [ "${{ matrix.beta }}" = "true" ]; then
-            url=$(curl -fsSL $CURL_RETRY "https://builder.blender.org/download/daily/?format=json&v=1" \
-              | jq -r --arg v "${{ matrix.blender }}" '[.[] | select(.platform == "linux"
-                  and .architecture == "x86_64" and .file_extension == "xz"
-                  and (.version | startswith($v + ".")))][0].url')
-          else
-            base="https://download.blender.org/release/Blender${{ matrix.blender }}"
-            file=$(curl -fsSL $CURL_RETRY "$base/" | grep -o 'blender-[0-9.]*-linux-x64\.tar\.xz' | sort -uV | tail -1)
-            url="$base/$file"
-          fi
-          if [ -z "$url" ] || [ "$url" = "null" ] || [ "${url%/}" != "$url" ]; then
-            echo "No Linux build found for Blender ${{ matrix.blender }}"; exit 1
-          fi
+          url=$(bash .github/find-blender.sh 5.3)
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "file=$(basename "$url")" >> "$GITHUB_OUTPUT"
 
@@ -59,7 +37,8 @@ jobs:
 
       - name: Download Blender
         run: |
-          [ -f blender.tar.xz ] || curl -fsSL $CURL_RETRY -o blender.tar.xz "${{ steps.build.outputs.url }}"
+          [ -f blender.tar.xz ] || curl -fsSL --retry 3 --retry-all-errors --retry-delay 10 \
+            -o blender.tar.xz "${{ steps.build.outputs.url }}"
           mkdir -p "$RUNNER_TEMP/blender"
           tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
 
@@ -74,42 +53,32 @@ jobs:
           "$RUNNER_TEMP/blender/blender" --background --factory-startup \
             --python-exit-code 1 --python tests/run_tests.py
 
-  package:
-    name: Build and validate the extension
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download Blender
-        run: |
-          base="https://download.blender.org/release/Blender5.3"
-          file=$(curl -fsSL $CURL_RETRY "$base/" | grep -o 'blender-[0-9.]*-linux-x64\.tar\.xz' | sort -uV | tail -1)
-          curl -fsSL $CURL_RETRY -o blender.tar.xz "$base/$file"
-          mkdir -p "$RUNNER_TEMP/blender"
-          tar -xf blender.tar.xz -C "$RUNNER_TEMP/blender" --strip-components=1
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-            libxkbcommon0 libsm6 libgl1 libegl1
-
-      - name: Build
+      - name: Build and validate the extension
         run: |
           mkdir -p dist
           "$RUNNER_TEMP/blender/blender" --factory-startup --command extension build \
-            --source-dir . --output-dir dist
-
-      - name: Validate
-        run: |
+            --source-dir tissue --output-dir dist
           "$RUNNER_TEMP/blender/blender" --factory-startup --command extension validate dist/*.zip
-          if unzip -l dist/*.zip | grep -E ' (docs/|tests/|\.github/|AGENTS\.md|HANDOVER\.md)'; then
-            echo "The package contains files that should be excluded"; exit 1
-          fi
+          unzip -l dist/*.zip
 
       # Kept for 3 days only: artifacts count against the account's storage, and a
       # full storage must not fail the run.
-      - name: Upload the package
+      - name: Upload the zip
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: tissue-extension
           path: dist/*.zip
           retention-days: 3
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep -m1 '^version' tissue/blender_manifest.toml | cut -d'"' -f2)
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "The tag ${GITHUB_REF_NAME} doesn't match version $version in the manifest"; exit 1
+          fi
+          gh release create "${GITHUB_REF_NAME}" dist/*.zip \
+            --title "Tissue ${version} for Blender 5.3" --notes-from-tag

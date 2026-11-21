@@ -1,31 +1,36 @@
-# Tissue for Blender 5
+# Tissue for Blender 5.3
 
-A fork of [Tissue](https://github.com/alessandro-zomparelli/tissue), the Blender add-on for computational design by Alessandro Zomparelli (Co-de-iT), with extra bug fixes, tested on Blender 5.3.
+A fork of [Tissue](https://github.com/alessandro-zomparelli/tissue), the Blender add-on for computational design by Alessandro Zomparelli (Co-de-iT), with extra bug fixes, made for Blender 5.3.
 
 Older Tissue releases don't work properly on Blender 5: on 0.3.71, Tessellate and many other tools fail with `this type doesn't support IDProperties`. Upstream 0.3.76 fixes that error. This fork starts from 0.3.76 and fixes the bugs listed below.
 
 ## Compatibility
 
-| Blender | Status |
-|---|---|
-| 5.3.0 | Test suite, full option sweep and real interface checks |
-| 5.2.2 LTS | Test suite, up to version 0.3.78 |
-| 4.5 to 5.2 | Should work (the manifest allows 4.5 or later), not tested by hand. GitHub Actions runs the tests on them, and on the next Blender's daily build |
+This version needs **Blender 5.3 or later**: older Blender versions refuse to install it. It was tested on Blender 5.3.0 with the test suite, a sweep of every option and checks in the real interface. Later versions are allowed, but haven't been tested.
 
 ## Installation
 
-The add-on is installed from a zip file, which you can build from this repository with Blender:
+1. Download the zip from the [latest release](https://github.com/mttfntn/tissue-blender-5/releases/latest).
+2. If you already have Tissue, open **Edit > Preferences > Add-ons**, find it and uninstall it. This fork uses the same add-on ID, so the two can't be active together.
+3. In the dropdown at the top right of the Add-ons preferences, choose **Install from Disk** and pick the zip.
+4. Restart Blender.
+
+To build the zip yourself instead, use Blender's build command on the `tissue` folder:
 
 ```
 git clone https://github.com/mttfntn/tissue-blender-5.git
-blender --command extension build --source-dir tissue-blender-5 --output-dir .
+blender --command extension build --source-dir tissue-blender-5/tissue --output-dir .
 ```
 
-This creates `tissue-0.3.79.zip`. Then in Blender:
+## What's in this repository
 
-1. If you already have Tissue, open **Edit > Preferences > Add-ons**, find it and uninstall it. This fork uses the same add-on ID, so the two can't be active together.
-2. In the dropdown at the top right of the Add-ons preferences, choose **Install from Disk** and pick the zip.
-3. Restart Blender.
+| Folder or file | Contents |
+|---|---|
+| [tissue/](tissue) | The add-on itself: everything that goes into the zip |
+| [tests/](tests) | The test suite |
+| [docs/](docs/README.md) | The user documentation |
+| [.github/](.github) | The automatic tests and releases on GitHub |
+| [HANDOVER.md](HANDOVER.md), [AGENTS.md](AGENTS.md) | How to work on the code, for people and for AI assistants |
 
 Tissue works without [Numba](https://numba.pydata.org/), but it is faster with it. You can install it from the add-on's preferences.
 
@@ -64,6 +69,7 @@ Tissue works without [Numba](https://numba.pydata.org/), but it is faster with i
 - About 1,400 lines of code that was never called were removed: unused functions, two operators that were never registered, branches that could never run and commented-out code
 - Small speed-ups: two handlers that did nothing on every frame change, a full copy of the mesh made on every Merge, and exceptions raised on every update are gone
 - Every module and the main Tessellate functions now have comments describing them
+- The add-on moved into the `tissue` folder, and it now requires Blender 5.3
 
 ## Working on the code
 
@@ -71,7 +77,7 @@ Tissue works without [Numba](https://numba.pydata.org/), but it is faster with i
 
 ## Tests
 
-[tests/run_tests.py](tests/run_tests.py) runs each Tissue tool on a small scene and checks the result:
+[tests/run_tests.py](tests/run_tests.py) runs each Tissue tool on a small scene and checks the result. Run it from the repository folder:
 
 ```
 blender --background --factory-startup --python-exit-code 1 --python tests/run_tests.py

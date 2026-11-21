@@ -1,13 +1,13 @@
 schema_version = "1.0.0"
 
 id = "tissue"
-version = "0.3.79"
+version = "0.3.80"
 name = "Tissue"
 tagline = "Tools for Computational Design"
 maintainer = "Alessandro Zomparelli"
 type = "add-on"
 
-blender_version_min = "4.5.0"
+blender_version_min = "5.3.0"
 
 license = [
 	"SPDX:GPL-3.0-or-later",
@@ -19,12 +19,5 @@ tracker_url = "https://github.com/alessandro-zomparelli/tissue/issues"
 [build]
 paths_exclude_pattern = [
 	"__pycache__/",
-	"/.git/",
-	"/.gitattributes",
 	"/*.zip",
-	"/docs/",
-	"/tests/",
-	"/.github/",
-	"/AGENTS.md",
-	"/HANDOVER.md",
 ]
