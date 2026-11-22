@@ -104,6 +104,8 @@ git push origin v0.3.81
 
 GitHub then runs the tests, builds the zip and publishes it as a release, with the tag's message as the notes. The release stops with an error if the tag doesn't match the version in the manifest. The release appears in the **Releases** section of the repository.
 
+The workflow then updates the **download size** badge in the README. shields.io can't read the size of a release file, so the workflow writes it into `.github/release-size.json` and commits it to `main` (a bot commit). Pull before your next change.
+
 GitHub doesn't keep the zip of ordinary pushes (no "artifacts"): the storage for them is shared by every repository of the account and can fill up. Releases carry the zip; to try a commit, build it yourself as shown below.
 
 To build the zip on your computer instead, run this from the repository folder:

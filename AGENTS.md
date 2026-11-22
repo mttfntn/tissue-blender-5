@@ -79,14 +79,14 @@ For larger changes, write the equivalent: a static unit test is not enough to sh
 ## Repository and git
 
 - `main` is the fork's branch, published to https://github.com/mttfntn/tissue-blender-5. In a fresh clone that remote is `origin`. Upstream is https://github.com/alessandro-zomparelli/tissue (`master`, and fixes that sometimes wait on `b5-dev`).
-- `.github/workflows/tests.yml` runs one job on Linux: tests on Blender 5.3, builds and validates the zip, and on a `v*` tag publishes a GitHub release with `gh release create --notes-from-tag`. The tag must equal `v` + the manifest version. It uploads **no artifacts**: the account's artifact storage is shared and was full, so don't add `upload-artifact` back.
+- `.github/workflows/tests.yml` runs one job on Linux: tests on Blender 5.3, builds and validates the zip, and on a `v*` tag publishes a GitHub release with `gh release create --notes-from-tag`. The tag must equal `v` + the manifest version. It uploads **no artifacts**: the account's artifact storage is shared and was full, so don't add `upload-artifact` back. On a tag it also writes `.github/release-size.json` (shields.io endpoint format) and commits it to `main` for the README's download-size badge (shields.io refuses release-download URLs).
 - `.github/find-blender.sh <version>` prints the Blender download URL. download.blender.org answers 403 to some GitHub runners, so it falls back to official mirrors; don't replace it with a single direct URL.
 - The zip contains only `tissue/` (`paths_exclude_pattern` drops `__pycache__` and zips). `tissue/LICENSE` is a copy of the root `LICENSE`, so the zip carries the license; keep them identical.
 
 ## Release checklist
 
 1. Bump the version in `tissue/blender_manifest.toml` and `tissue/__init__.py` (`_bl_info_fallback`).
-2. Update the README: the fix list and the test count. The badges are live (shields.io and GitHub read the manifest and the latest release): never hard-code a version in them.
+2. Update the README: the fix list and the test count. The badges are live (shields.io and GitHub read the manifest, the latest release and `.github/release-size.json` on `main`): never hard-code a version in them.
 3. Run the suite with and without Numba.
 4. Build, `validate`, and install the zip in an isolated profile (`BLENDER_USER_RESOURCES`), then tessellate once.
 5. Commit and push `main`, wait for the run to pass.
