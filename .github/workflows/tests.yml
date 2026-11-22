@@ -5,8 +5,6 @@ name: Tests
 
 on:
   push:
-    # `badges` only holds the data of the README's download-size badge
-    branches-ignore: [badges]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
@@ -81,28 +79,3 @@ jobs:
           git fetch --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           gh release create "${GITHUB_REF_NAME}" dist/*.zip \
             --title "Tissue ${version} for Blender 5.3" --notes-from-tag
-
-      # Data for the README's "download size" badge (shields.io endpoint format).
-      # shields.io refuses release-download URLs but reads raw.githubusercontent.com,
-      # so the file goes to a separate one-commit `badges` branch (main is untouched).
-      - name: Update the download-size badge
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          work=$(mktemp -d)
-          python3 - "$work/release-size.json" dist/*.zip <<'PY'
-          import json, os, sys
-          size = os.path.getsize(sys.argv[2])
-          text = f"{size / 1024:.1f} KB" if size < 1024 ** 2 else f"{size / 1024 ** 2:.1f} MB"
-          json.dump({"schemaVersion": 1, "label": "download size", "message": text, "color": "blue"},
-                    open(sys.argv[1], "w"))
-          print(text)
-          PY
-          cd "$work"
-          git init -q -b badges
-          git add release-size.json
-          git -c user.name="github-actions[bot]" \
-              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "Download-size badge data for ${GITHUB_REF_NAME}"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/badges

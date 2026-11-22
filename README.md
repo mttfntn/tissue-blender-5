@@ -2,7 +2,6 @@
 
 [![Blender](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmttfntn%2Ftissue-blender-5%2Fmain%2Ftissue%2Fblender_manifest.toml&query=%24.blender_version_min&label=Blender&color=E87D0D&logo=blender&logoColor=white)](https://www.blender.org/download/)
 [![Release](https://img.shields.io/github/v/release/mttfntn/tissue-blender-5)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
-[![Download size](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmttfntn%2Ftissue-blender-5%2Fbadges%2Frelease-size.json)](https://github.com/mttfntn/tissue-blender-5/releases/latest)
 [![Tests](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/mttfntn/tissue-blender-5/actions/workflows/tests.yml)
 [![License](https://img.shields.io/github/license/mttfntn/tissue-blender-5)](LICENSE)
 [![Language](https://img.shields.io/github/languages/top/mttfntn/tissue-blender-5)](tissue)
